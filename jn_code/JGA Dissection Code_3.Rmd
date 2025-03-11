@@ -1,0 +1,3043 @@
+---
+title: "Pdgfrb-INTACT JGA Dissection Code"
+author: "Jonathan Nelson"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+    number_sections: yes
+    theme: bootstrap
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("tibble")) {install.packages("tibble"); require("tibble")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("RColorBrewer")) {install.packages("RColorBrewer"); require("RColorBrewer")} #color
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("DESeq2")) {BiocManager::install('DESeq2'); require("DESeq2")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("stringr")) {install.packages("stringr"); require("stringr")}
+if (!require("car")) {install.packages("car"); require("car")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("readxl")) {install.packages("readxl"); require("readxl")}
+if (!require("data.table")) {install.packages("data.table"); require("data.table")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("kableExtra")) {install.packages("kableExtra"); require("kableExtra")} # for color brewer
+if (!require("gplots")) {install.packages("gplots"); require("gplots")} # for color brewer
+if (!require("clusterProfiler")) {BiocManager::install('clusterProfiler'); require("clusterProfiler")}
+if (!require("enrichplot")) {BiocManager::install('enrichplot'); require("enrichplot")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")} # for data frame transformation
+library("EnhancedVolcano")
+library(UpSetR)
+library(ComplexHeatmap)
+#install.packages("ggtext")
+library(ggtext)
+library(CellChat)
+library(patchwork)
+library(sjmisc)
+options(stringsAsFactors = FALSE)
+
+```
+
+
+# Load Pdgfrb Dataset
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+rm(list = ls())
+
+SO <- readRDS(here("Datasets", "INTACT_JGA.rds"))
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+DimPlot(SO)
+
+SO
+
+```
+
+# Increase Globals
+```{r}
+options(future.globals.maxSize = 74 * 1024^3) # 55 GB
+getOption("future.globals.maxSize") #59055800320
+```
+
+# Load Slc12a1 Datasets
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO_TAL <- readRDS(here("Datasets", "TAL_TenX.rds"))
+
+Idents(SO_TAL) <- SO_TAL@meta.data$class.TAL
+
+DimPlot(SO_TAL)
+
+VlnPlot(SO, "nCount_RNA")
+
+SO_TAL2 <- subset(SO_TAL, subset = nCount_RNA > 1000 & nCount_RNA < 5000)
+SO_TAL2 <- subset(SO_TAL2, subset = class.TAL == "Prolif", invert = T)
+
+SO_TAL3 <- SCTransform(SO_TAL2) %>%
+    RunPCA() %>%
+    FindNeighbors(dims = 1:30) %>%
+    FindClusters(resolution = .1) %>%
+    RunUMAP(dims = 1:30)
+
+
+Idents(SO_TAL3) <- SO_TAL3@meta.data$orig.ident
+SO_TAL4 <- subset(SO_TAL3, downsample = 2110)
+Idents(SO_TAL3) <- SO_TAL3@meta.data$class.TAL
+
+VlnPlot(SO_TAL3, "nCount_RNA")
+
+FeaturePlot(SO_TAL3, "nCount_RNA")
+
+DimPlot(SO_TAL4)
+
+DimPlot(SO_TAL4, group.by = "class.TAL")
+
+FeaturePlot(SO_TAL2, "Nt5e", order = T)
+FeaturePlot(SO, "Nt5e", order = T)
+
+```
+
+# UMAP of Pdgfrb and Slc12a1 Datasets
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA") +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none") +
+  ggtitle("Pdgfrb+ Lineage")
+
+# Pass the mapping to DimPlot
+DimPlot(SO_TAL4, group.by = "class.TAL") +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none") +
+  ggtitle("Slc12a1+ Lineage")
+
+
+
+
+
+```
+
+
+# Population DEG Graphs
+
+# EG vs. IG Mesangial Cells
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <- "EG Mesangial Cell"   # Replace with the actual first level
+j <- "IG Mesangial Cell"  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+
+df_go <- pos_go@result
+```
+
+# EG Mesangial Cells vs. VSMC
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <- "EG Mesangial Cell"   # Replace with the actual first level
+j <- c("Afferent VSMC", "Efferent VSMC")  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+
+df_go <- pos_go@result
+```
+
+
+
+# Granular Cells vs. Others
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <- "Granular Cell"   # Replace with the actual first level
+j <- c("IG Mesangial Cell", "EG Mesangial Cell", "Efferent VSMC", "Afferent VSMC", "Pericyte" )  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow", "yellow", "yellow", "yellow", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+```
+
+# Granular Cells vs. Afferent
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <- "Granular Cell"   # Replace with the actual first level
+j <- c("Afferent VSMC")  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+```
+
+
+# Afferent VSMC vs. Efferent VSMC
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <- "Afferent VSMC"   # Replace with the actual first level
+j <- c("Efferent VSMC")  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+```
+
+# Pericyte vs. VSMC
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <-  "Pericyte"  # Replace with the actual first level
+j <- c("Efferent VSMC", "Afferent VSMC")  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+
+DimPlot(SO_TAL2)
+```
+
+
+# MD vs. TAL
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <-  "MD"  # Replace with the actual first level
+j <- c("TAL A", "TAL B")  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO_TAL2, group.by = "class.TAL", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO_TAL2, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+```
+
+
+
+
+# EG Mes Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+mesDEGs <- FindMarkers(SO, ident.1 = c("EG Mesangial Cell"), ident.2 = c("IG Mesangial Cell"), min.pct = 0.25, logfc.threshold = 0.25)
+
+DEG_list <- mesDEGs
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go)
+
+dotplot(pos_go) +
+        ggtitle("EG Mesangial Cell Upregulated Pathways") +
+        theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "right",                       
+        axis.text.y = element_text(hjust = 0)
+    ) +
+    scale_y_discrete(position = "right") + 
+  theme_classic()
+
+dotplot(pos_go) +
+    ggtitle("EG Mesangial Cell Upregulated Pathways") +
+    theme_classic() +  # Apply the classic theme first
+    theme(
+        plot.title = element_text(hjust = 0.5),    # Center the title
+        legend.position = "left",                  # Move legend to the left
+        axis.text.y = element_text(hjust = 0)      # Align y-axis text to the left (for right-side labels)
+    ) +
+    scale_y_discrete(position = "right")           # Move y-axis labels to the right
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DefaultAssay(SO) <- "RNA"
+Idents(SO) <- SO@meta.data$class.JGA
+
+markers.to.plot1 <- c("Pdgfrb",
+                      "Abcc9",
+                      "Acta2",
+                      "Adra1a",
+                      "Tenm2",
+                      "Ren1",
+                      "Gata3",
+                      "Pdgfra",
+                      "Piezo2",
+                      "Agtr1a",
+                      "Adora1"
+                            )
+
+markers.to.plot2 <- c("Pdgfrb",
+                      "Abcc9",
+                      "Acta2",
+                      "Adra1a",
+                      "Tenm2",
+                      "Ren1",
+                      "Piezo2"
+                      )
+
+markers.to.plot3 <- c("Pdgfrb",
+                      "Acta2",
+                      "Ren1",
+                      "Piezo2"
+                      )
+
+
+DotPlot(SO,
+        features = markers.to.plot3,
+        dot.scale = 8,
+        dot.min = 0,
+        scale.max = 100,
+        scale.min = 0,
+        col.min = -2.5,
+        col.max = 2.5,
+        scale = FALSE,
+        group.by = "class.JGA") +
+  coord_flip() +
+  theme_classic() +
+  ggtitle("Populations Markers") +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        axis.ticks.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  xlab(NULL) +
+  ylab(NULL)
+
+
+
+markers.to.plot4 <- c("Gja1",
+                      "Gja3",
+                      "Gja4",
+                      "Gjb2",
+                      "Gjb4",
+                      "Gjb3",
+                      "Gjb5",
+                      "GJb1",
+                      "Gja9",
+                      "GJa5",
+                      "Gja10",
+                      "Panx"
+                      )
+
+DotPlot(SO,
+        features = markers.to.plot4,
+        dot.scale = 8,
+        dot.min = 0,
+        scale.max = 10,
+        scale.min = 0,
+        col.min = -2.5,
+        col.max = 2.5,
+        scale = FALSE,
+        group.by = "class.JGA") +
+  coord_flip() +
+  theme_classic() +
+  ggtitle("Populations Markers") +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        axis.ticks.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  xlab(NULL) +
+  ylab(NULL)
+
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+df_ex_mes <- FindMarkers(SO, ident.1 = "EG Mesangial Cell", min.pct = 0.1, logfc.threshold = 0.25)
+
+
+df_Ex_mes_pos <- subset(df_ex_mes, p_val_adj < 0.05 & avg_log2FC > 0)
+
+rownames(df_Ex_mes_pos)
+
+
+VlnPlot(SO, "Tjp1")
+
+VlnPlot(SO, "Gja5")
+
+
+VlnPlot(SO, "Ren1")
+
+
+VlnPlot(SO, "Ptger2")
+VlnPlot(SO, "Ptger4")
+VlnPlot(SO, "Ptger3")
+VlnPlot(SO, "Ptger1")
+
+VlnPlot(SO, "Agtr1a")
+VlnPlot(SO, "Agtr1b")
+VlnPlot(SO, "Agt")
+VlnPlot(SO, "Agtr2")
+VlnPlot(SO, "Mmp7")
+VlnPlot(SO, "Gja5")
+VlnPlot(SO, "Nt5e")
+VlnPlot(SO, "Pdgfrb")
+
+VlnPlot(SO, "Adora1")
+VlnPlot(SO, "Rgs5")
+VlnPlot(SO, "Dgkg")
+
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.width=10}
+
+
+df7 <- FindAllMarkers(SO, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+df7 %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
+
+top5 <- df7 %>% distinct(gene, .keep_all = TRUE) %>% group_by(cluster) %>% top_n(5, avg_log2FC)
+
+DotPlot(SO,
+        features = top5$gene,
+        cols = c("#0099ff", "#dc143c"),
+        dot.scale = 8,
+           dot.min = 0,
+           scale.max = 100,
+           scale.min = 0,
+           col.min = -2.5,
+           col.max = 2.5) + 
+ # scale_y_discrete(limits = c(Prol"MD", "TAL β", "TAL α")) + 
+  theme(axis.text.x = element_text(),
+        axis.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 9)) + 
+  RotatedAxis() + 
+  ggtitle("Top 5 Pdgfrb JGA DEG") 
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.width=15}
+
+
+top10 <- df7 %>% distinct(gene, .keep_all = TRUE) %>% group_by(cluster) %>% top_n(10, avg_log2FC)
+
+DotPlot(SO,
+        features = top10$gene,
+        cols = c("#0099ff", "#dc143c"),
+        dot.scale = 8,
+           dot.min = 0,
+           scale.max = 100,
+           scale.min = 0,
+           col.min = -2.5,
+           col.max = 2.5) + 
+ # scale_y_discrete(limits = c(Prol"MD", "TAL β", "TAL α")) + 
+  theme(axis.text.x = element_text(),
+        axis.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 9)) + 
+  RotatedAxis() + 
+  ggtitle("Top 10 Pdgfrb JGA DEG") 
+
+```
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+#filter to only include rows with p_val_adj < 0.05
+
+df8 <- df7 %>% filter(p_val_adj < 0.05)
+
+clustered_genes <- split(df8$gene, df8$cluster)
+
+list_to_matrix(clustered_genes)
+
+m1 = make_comb_mat(clustered_genes)
+m1
+
+set_name(m1)
+# [1] "Pericyte" (100000) "Efferent VSMC" (010000) "Afferent VSMC" (001000) "Granular Cell" (000100) "EG Mesangial Cell" (000010) "IG Mesangial Cell" (000001)
+comb_name(m1)
+# "100000" "00000" "001000" "000100" "000010" "000001"
+comb_size(m1)
+set_size(m1)
+m1 <- m1[comb_size(m1) >= 2]
+UpSet(m1, set_order = rev(c("Pericyte", "Afferent VSMC", "Efferent VSMC", "Granular Cell",  "EG Mesangial Cell", "IG Mesangial Cell")), comb_order = order(comb_size(m1)))
+
+# Mesangial Intersection
+extract_comb(m1,"000011")
+
+# VSMC Intersection
+extract_comb(m1,"011000")
+
+# AA and Granular Cell Intersection
+extract_comb(m1,"001100")
+
+```
+
+
+# Volcano Plots
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DimPlot(SO, group.by = "class.JGA")
+
+DimPlot(SO, group.by = "class.JGA", 
+        cols = c("EG Mesangial Cell" = "yellow", 
+                 "IG Mesangial Cell" = "blue")) +
+  ggtitle("")
+
+
+VlnPlot(SO, "Pcna")
+
+
+```
+
+## IG vs. EG Mes
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DimPlot(SO)
+
+df6 <- FindMarkers(SO, ident.1 = c("IG Mesangial Cell"), ident.2 = c("EG Mesangial Cell"), min.pct = 0.1, logfc.threshold = 0.25)
+
+df6 <- df6 %>% filter(p_val_adj < 0.05)
+
+EnhancedVolcano(df6,
+                lab = rownames(df6),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-4, 4),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+## Afferent VSMC vs. EG Mes
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DimPlot(SO, group.by = "class.JGA")
+
+DimPlot(SO, group.by = "class.JGA", 
+        cols = c("EG Mesangial Cell" = "yellow", 
+                 "Afferent VSMC" = "blue")) +
+  ggtitle("")
+
+
+```
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df12 <- FindMarkers(SO, ident.1 = c("Afferent VSMC"), ident.2 = c("EG Mesangial Cell"), min.pct = 0.1, logfc.threshold = 0.25)
+
+df12 <- df12 %>% filter(p_val_adj < 0.05)
+
+EnhancedVolcano(df12,
+                lab = rownames(df12),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-4, 4),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+
+## Afferent VSMC vs. Efferent VSMC
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DimPlot(SO, group.by = "class.JGA")
+
+DimPlot(SO, group.by = "class.JGA", 
+        cols = c("Efferent VSMC" = "yellow", 
+                 "Afferent VSMC" = "blue")) +
+  ggtitle("")
+
+
+```
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df12 <- FindMarkers(SO, ident.1 = c("Afferent VSMC"), ident.2 = c("Efferent VSMC"), min.pct = 0.1, logfc.threshold = 0.25)
+
+df12 <- df12 %>% filter(p_val_adj < 0.05)
+
+EnhancedVolcano(df12,
+                lab = rownames(df12),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-4, 4),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+
+
+
+## Granular Cells
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DimPlot(SO, group.by = "class.JGA")
+
+DimPlot(SO, group.by = "class.JGA", 
+        cols = c("EG Mesangial Cell" = "yellow",
+                 "IG Mesangial Cell" = "yellow", 
+                 "Efferent VSMC" = "yellow", 
+                 "Afferent VSMC" = "yellow", 
+                 "Pericyte" = "yellow", 
+                 "Granular Cell" = "blue")) +
+  ggtitle("")
+
+
+
+
+```
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df9 <- FindMarkers(SO, ident.1 = c("Granular Cell"), min.pct = 0.1, logfc.threshold = 0.25)
+
+df9 <- df9 %>% filter(p_val_adj < 0.05)
+
+EnhancedVolcano(df9,
+                lab = rownames(df9),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-4, 4),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+
+## Afferent vs. Efferent VSMC
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df10 <- FindMarkers(SO, ident.1 = c("Afferent VSMC"), ident.2 = c("Efferent VSMC"), min.pct = 0.1, logfc.threshold = 0.25)
+
+EnhancedVolcano(df10,
+                lab = rownames(df10),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-4, 4),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+## Pericytes vs. VSMC
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df11 <- FindMarkers(SO, ident.1 = c("Pericyte"), ident.2 = c("Afferent VSMC","Efferent VSMC"), min.pct = 0.1, logfc.threshold = 0.25)
+
+EnhancedVolcano(df11,
+                lab = rownames(df11),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-4, 4),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+
+# IG Mes Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+mesDEGs <- FindMarkers(SO, ident.1 = c("IG Mesangial Cell"), ident.2 = c("EG Mesangial Cell"), min.pct = 0.25, logfc.threshold = 0.25)
+
+DEG_list <- mesDEGs
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +         
+        ggtitle("IG Mesangial Cell Upregulated Pathways") +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme_classic() + 
+        scale_x_reverse()  # Reverses the x-axis
+        
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("DCT1 Upregulated Pathways") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+dotplot(pos_go) +
+    ggtitle("DCT1 Upregulated Pathways") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),          # Center the title
+        legend.position = "left",                        # Move legend to the left
+        axis.text.y = element_text(hjust = 0)            # Move y-axis labels to the right
+    ) +
+    scale_y_discrete(position = "right") +               # Position y-axis labels on the right
+    scale_x_reverse()  
+
+dotplot(pos_go) +
+    ggtitle("DCT1 Upregulated Pathways") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)  # Adjust size if needed
+    ) +
+    scale_y_discrete(position = "right") +
+    scale_x_reverse()
+
+dotplot(pos_go) +         
+        ggtitle("IG Mesangial Cell Upregulated Pathways") +
+        theme(plot.title = element_text(hjust = 0.5)) + 
+        theme_classic() + 
+        scale_x_reverse()  # Reverses the x-axis
+
+
+dotplot(pos_go) +         
+    ggtitle("IG Mesangial Cell Upregulated Pathways") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text.y = element_text(lineheight = 1, margin = margin(r = 10))  # Ensures single line with spacing
+    ) +
+    scale_x_reverse()
+
+dotplot(pos_go) +         
+    ggtitle("IG Mesangial Cell Upregulated Pathways") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text.y = element_text(lineheight = 1),
+        plot.margin = margin(t = 10, r = 50, b = 10, l = 150)  # Increase left margin
+    ) +
+    scale_x_reverse()
+
+```
+
+# EG Mes Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+mesDEGs <- FindMarkers(SO, ident.1 = c("EG Mesangial Cell"), ident.2 = c("IG Mesangial Cell"), min.pct = 0.25, logfc.threshold = 0.25)
+
+DEG_list <- mesDEGs
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go)
+
+dotplot(pos_go) +
+        ggtitle("EG Mesangial Cell Upregulated Pathways") +
+        theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "right",                       
+        axis.text.y = element_text(hjust = 0)
+    ) +
+    scale_y_discrete(position = "right") + 
+  theme_classic()
+
+dotplot(pos_go) +
+    ggtitle("EG Mesangial Cell Upregulated Pathways") +
+    theme_classic() +  # Apply the classic theme first
+    theme(
+        plot.title = element_text(hjust = 0.5),    # Center the title
+        legend.position = "left",                  # Move legend to the left
+        axis.text.y = element_text(hjust = 0)      # Align y-axis text to the left (for right-side labels)
+    ) +
+    scale_y_discrete(position = "right")           # Move y-axis labels to the right
+
+```
+
+
+# Pericytes vs. VSMC
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.height=10}
+
+
+mesDEGs <- FindMarkers(SO, ident.1 = c("Pericyte"), ident.2 = c("Efferent VSMC", "Afferent VSMC"), min.pct = 0.25, logfc.threshold = 0.25)
+
+DEG_list <- mesDEGs
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+        facet_grid(scale="free") +          #ggplot2 functions
+        ggtitle("DCT1 Upregulated Pathways") +
+        theme(plot.title = element_text(hjust = 0.5)) + theme_classic()
+```
+
+# UMAPs for RNAscope
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+
+
+FeaturePlot(SO, "Pdgfrb") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Pdgfra") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Gata3") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+
+FeaturePlot(SO, "Adora1") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Hpse2") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Tenm2") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Dgkg") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Rgs5") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+FeaturePlot(SO, "Agtr1a") + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  )
+
+
+```
+
+
+# Violin Plots for RNAscope
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+VlnPlot(SO, features = "Pdgfrb", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Pdgfra", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Gata3", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Adora1", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Hpse2", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Tenm2", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Dgkg", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Rgs5", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+
+VlnPlot(SO, features = "Agtr1a", group.by = "class.JGA", pt.size = 1) +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        text = element_text(size=20),
+        axis.text.x = element_text(color = "black", size = 16, angle = 45, hjust = 1, vjust = 1),
+        legend.position = "none"
+        ) + xlab("") 
+        
+```        
+
+
+# df of Log2FC for RNAscope
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+list <- c("Pdgfrb", "Pdgfra", "Gata3", "Adora1", "Hpse2", "Tenm2", "Dgkg", "Rgs5", "Agtr1a")
+
+df_markers <- FindMarkers(SO, ident.1 = "EG Mesangial Cell", ident.2 = "IG Mesangial Cell", features = list, min.pct = 0, logfc.threshold = 0)
+
+df_markers
+
+write.csv(df_markers, file = here("snRNAseq_RNAscope_markers.csv"))
+```
+# BarPlot of Log2FC for RNAscope
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+list <- c("Pdgfrb", "Pdgfra", "Gata3", "Adora1", "Hpse2", "Tenm2", "Dgkg", "Rgs5", "Agtr1a")
+
+
+StromaPB <- AggregateExpression(SO, group.by = c("class.JGA", "Sample"), assays = 'RNA', slot = "counts", return.seurat = FALSE)
+StromaPB <- StromaPB$RNA
+StromaPB <- t(StromaPB)
+StromaPB <- as.data.frame(StromaPB)
+StromaPB
+
+FibAPB <- StromaPB[, list]
+
+df <- FibAPB %>% rotate_df() %>% rownames_to_column() %>% pivot_longer(cols = 2:7)
+
+for (i in list) {
+df2 <- filter(df, rowname == i)
+     p <- ggplot(data = df2, aes(x = name, y = value)) +
+    geom_bar(stat = "identity", fill = "blue") + 
+    labs(title = paste("Pseudobulk Expression of", i),
+         x = "Cell Types",
+         y = "Expression Level") +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    print(p)
+    
+
+p1 <- ggplot(data = df2[df2$name %in% c("EG Mesangial Cell", "IG Mesangial Cell"), ], 
+            aes(x = name, y = value)) +
+    geom_bar(stat = "identity", fill = "blue") + 
+    labs(title = paste("Pseudobulk Expression of", i),
+         x = "Cell Types",
+         y = "Expression Level") +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+}
+
+head(SO@meta.data)
+```
+      
+# Slc12a1-Lineage
+
+# Load Dataset
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO_TAL <- readRDS(here("Datasets", "TAL_TenX.rds"))
+
+SO_TAL2 <- subset(x = SO_TAL, subset = class.TAL == "Prolif", invert = TRUE)
+
+Idents(SO_TAL2) <- SO_TAL2@meta.data$orig.ident
+
+head(SO_TAL2@meta.data)
+
+SO_TAL3 <- subset(x = SO_TAL2, downsample = 2110)
+
+DimPlot(SO_TAL3, group.by = "class.TAL")
+
+FeaturePlot(SO_TAL3, features = c("Slc12a1", "Cldn10", "Cldn16", "Nos1", "Umod"))
+
+
+
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DefaultAssay(SO_TAL3) <- "RNA"
+
+markers.to.plot3 <- c("Slc12a1",
+                      "Cldn10",
+                      "Cldn16",
+                      "Nos1"
+                            )
+
+DotPlot(SO_TAL3,
+        features = markers.to.plot3,
+        dot.scale = 8,
+        dot.min = 0,
+        scale.max = 50,
+        scale.min = 0,
+        col.min = -2.5,
+        col.max = 2.5,
+        scale = F,
+        group.by = "class.TAL") +
+  coord_flip() +
+  theme_classic() +
+  ggtitle("Populations Markers") +
+  theme(axis.line = element_line(size = 1, colour = "black"),
+        axis.ticks.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  xlab(NULL) +
+  ylab(NULL)
+
+
+```  
+
+## MD Cells
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+DimPlot(SO_TAL3, group.by = "class.TAL", 
+        cols = c("TAL B" = "yellow",
+                 "TAL A" = "yellow",
+                 "MD" = "blue")) +
+  ggtitle("")
+
+
+```
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+Idents(SO_TAL4) <- SO_TAL4@meta.data$class.TAL
+
+df13 <- FindMarkers(SO_TAL4, ident.1 = c("MD"), min.pct = 0.1, logfc.threshold = 0.25)
+
+df13 <- df13 %>% filter(p_val_adj < 0.05)
+
+EnhancedVolcano(df13,
+                lab = rownames(df13),
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T, 
+                xlim = c(-5.5, 5.5),
+                widthConnectors = 0.5) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme_classic()
+
+```
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+FeaturePlot(SO, "Pdgfra")
+
+VlnPlot(SO, "Pdgfra", group.by = "class.Merge")
+
+FeaturePlot(SO_TAL3, "Nt5c1a", order = TRUE)
+
+FeaturePlot(SO, "Ngf")
+
+VlnPlot(SO, "Acta2")
+VlnPlot(SO, "Agtr1a")
+
+```
+
+# Pathways Analysis
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO@meta.data$Cell <- SO@meta.data$class.JGA
+
+SO_TAL4@meta.data$Cell <- SO_TAL4@meta.data$class.TAL
+
+SO_merge <- merge(x = SO, y = SO_TAL4)
+
+DefaultAssay(SO_merge) <- "RNA"
+
+SO_merge <- NormalizeData(object = SO_merge)
+SO_merge <- FindVariableFeatures(object = SO_merge)
+SO_merge <- ScaleData(object = SO_merge)
+SO_merge <- RunPCA(object = SO_merge)
+SO_merge <- FindNeighbors(object = SO_merge, dims = 1:30)
+SO_merge <- FindClusters(object = SO_merge)
+SO_merge <- RunUMAP(object = SO_merge, dims = 1:30)
+DimPlot(object = SO_merge, reduction = "umap")
+
+DimPlot(object = SO_merge, reduction = "umap", group.by = "Cell")
+
+VlnPlot(SO_merge, "nCount_RNA", group.by = "Cell")
+
+VlnPlot(SO_merge, "Igfbp5", group.by = "Cell")
+
+
+head(SO_merge@meta.data)
+
+
+
+```
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+Idents(SO_merge) <-SO_merge@meta.data$Cell
+
+seurat_object <- SO_merge
+
+Idents(seurat_object) <- seurat_object@meta.data$Cell
+data.input <- seurat_object[["RNA"]]@data # normalized data matrix
+# For Seurat version >= “5.0.0”, get the normalized data via `seurat_object[["RNA"]]$data`
+labels <- Idents(seurat_object)
+meta <- data.frame(labels = labels, row.names = names(labels)) # create a dataframe of the cell labels
+
+cellchat <- createCellChat(object = data.input, meta = meta, group.by = "labels")
+
+cellChat <- createCellChat(object = SO, group.by = "ident", assay = "RNA")
+
+CellChatDB <- CellChatDB.mouse # use CellChatDB.mouse if running on mouse data
+showDatabaseCategory(CellChatDB)
+
+CellChatDB.use <- CellChatDB
+cellchat@DB <- CellChatDB.use
+
+cellchat <- subsetData(cellchat) # This step is necessary even if using the whole database
+future::plan("multisession", workers = 4) # do parallel
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+#> The number of highly variable ligand-receptor pairs used for signaling inference is 692
+
+cellchat <- computeCommunProb(cellchat, type = "triMean")
+
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+
+cellchat <- computeCommunProbPathway(cellchat)
+
+cellchat <- aggregateNet(cellchat)
+
+
+saveRDS(cellchat, file = here("CellChat_JGA.rds"))
+cellchat <- readRDS(here("CellChat_JGA.rds"))
+
+Idents(object = cellchat) <- cellchat@meta.data$Cell
+
+df.net <- subsetCommunication(cellchat)
+
+df.net
+
+write.csv(df.net, here("CellChat_JGA.csv"))
+
+groupSize <- as.numeric(table(cellchat@idents))
+par(mfrow = c(1,2), xpd=TRUE)
+netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Number of interactions")
+netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Interaction weights/strength")
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+mat <- cellchat@net$weight
+par(mfrow = c(3,4), xpd=TRUE)
+for (i in 1:nrow(mat)) {
+  mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+  mat2[i, ] <- mat[i, ]
+  netVisual_circle(mat2, vertex.weight = groupSize, weight.scale = T, edge.weight.max = max(mat), title.name = rownames(mat)[i])
+}
+
+```
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+pathways.show <- c("COLLAGEN") 
+# Hierarchy plot
+# Here we define `vertex.receive` so that the left portion of the hierarchy plot shows signaling to fibroblast and the right portion shows signaling to immune cells 
+vertex.receiver = seq(1,4) # a numeric vector. 
+netVisual_aggregate(cellchat, signaling = pathways.show,  vertex.receiver = vertex.receiver)
+# Circle plot
+par(mfrow=c(1,1))
+netVisual_aggregate(cellchat, signaling = pathways.show, layout = "circle")
+
+par(mfrow=c(1,1))
+netVisual_aggregate(cellchat, signaling = pathways.show, layout = "chord")
+
+par(mfrow=c(1,1))
+netVisual_heatmap(cellchat, signaling = pathways.show, color.heatmap = "Reds")
+#> Do heatmap based on a single object
+
+netAnalysis_contribution(cellchat, signaling = pathways.show)
+
+cellchat <- readRDS(here("CellChat_JGA.rds"))
+
+runCellChatApp(cellchat)
+```
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DimPlot(object = SO)
+
+FeaturePlot(SO, "Adora1")
+
+FeaturePlot(SO, "Limch1")
+
+VlnPlot(SO, "Acta2", group.by = "class.JGA")
+
+VlnPlot(SO, "Meox2", group.by = "class.JGA")
+VlnPlot(SO, "Galnt11", group.by = "class.JGA")
+VlnPlot(SO, "Il1rap", group.by = "class.JGA")
+VlnPlot(SO, "Nppa", group.by = "class.JGA")
+VlnPlot(SO, "Hpcal1", group.by = "class.JGA")
+VlnPlot(SO, "Cdh23", group.by = "class.JGA")
+VlnPlot(SO, "Col4a3", group.by = "class.JGA")
+
+VlnPlot(SO, "Col4a3", group.by = "class.JGA")
+VlnPlot(SO, "Col4a3", group.by = "class.JGA")
+VlnPlot(SO, "Colec11", group.by = "class.JGA")
+VlnPlot(SO, "Tamm41", group.by = "class.JGA")
+VlnPlot(SO, "Ddr1", group.by = "class.JGA")
+VlnPlot(SO, "Stxbp6", group.by = "class.JGA")
+VlnPlot(SO, "Bmp7", group.by = "class.JGA")
+VlnPlot(SO, "Ren1", group.by = "class.JGA")
+
+
+CKD_GWAS <- c("Igfbp5", "Vegfa", "Dach1", "Ddx1", "Slc47a1", "Slc22a2", "Dpep1", "Slc34a1", "Lrp2", "Sypl2", "Slc6a13", "A1cf", "Umod", "Stc1", "Mpped2", "Prkag2", "Wdr37", "Kcnq1", "Wdr72", "Gatm", "Nfkb1", "Etv5", "Skil", "Cacna1s")
+
+for (gene in CKD_GWAS) {
+  p1 <- VlnPlot(SO, gene, group.by = "class.JGA")
+  print(p1)
+}
+
+BP_GWAS1 <- c("Kcnj5", "Slc12a1", "Wnk4", "Wnk1", "Klhl3", "Slc12a3", "Kcnj1", "Nr3c2", "Scnn1b", "Hsd11b2", "Bsnd")
+
+for (gene in BP_GWAS1) {
+  p1 <- VlnPlot(SO, gene, group.by = "class.JGA")
+  print(p1)
+}
+
+BP_GWAS2 <- c("Fgd5", "Igfbp3", "Nos3", "Rras", "Procr", "Map4", "Enpep", "Plce1", "Npr1", "Adm", "Plekhg1", "Pde3a", "Hoxc4", "Znrf3", "Rrp1b", "Arhgap24", "Dpep1", "Umod", "Lmo1", "Phactr1", "Prdm16", "Insr", "Sox6", "Rgl3", "Prkag2", "Jag1", "Pde1a", "Tbx2", "Hfe", "Nucb2", "Ehbp1l1", "Sh2b3", "Adrb1", "Cdk6", "H2-Ab1", "Ebf1", "Phip", "Pik3cg", "Csnk1g3", "Prex1")
+
+for (gene in BP_GWAS2) {
+  p1 <- VlnPlot(SO, gene, group.by = "class.JGA")
+  print(p1)
+}
+
+
+gene_unlist <- c("Igfbp5", "Vegfa", "Dach1", "Ddx1", "Slc47a1", "Slc22a2", "Dpep1", 
+                 "Slc34a1", "Lrp2", "Sypl2", "Slc6a13", "A1cf", "Umod", "Stc1", 
+                 "Mpped2", "Prkag2", "Wdr37", "Kcnq1", "Wdr72", "Gatm", "Nfkb1", 
+                 "Etv5", "Skil", "Cacna1s", "Kcnj5", "Slc12a1", "Wnk4", "Wnk1", 
+                 "Klhl3", "Slc12a3", "Kcnj1", "Nr3c2", "Scnn1b", "Hsd11b2", "Bsnd", 
+                 "Fgd5", "Igfbp3", "Nos3", "Rras", "Procr", "Map4", "Enpep", "Plce1", 
+                 "Npr1", "Adm", "Plekhg1", "Pde3a", "Hoxc4", "Znrf3", "Rrp1b", 
+                 "Arhgap24", "Dpep1", "Umod", "Lmo1", "Phactr1", "Prdm16", "Insr", 
+                 "Sox6", "Rgl3", "Prkag2", "Jag1", "Pde1a", "Tbx2", "Hfe", "Nucb2", 
+                 "Ehbp1l1", "Sh2b3", "Adrb1", "Cdk6", "H2-Ab1", "Ebf1", "Phip", 
+                 "Pik3cg", "Csnk1g3", "Prex1")
+
+for (gene in gene_unlist) {
+  p1 <- VlnPlot(SO_merge, gene, group.by = "Cell")
+  print(p1)
+}
+
+gene_unlist2 <- c("Igfbp5")
+
+dfz <- AverageExpression(object = SO, features = gene_unlist, group.by = "Cell")$RNA
+dfz2 <- AverageExpression(object = SO_TAL4, features = gene_unlist, group.by = "Cell")$RNA
+
+df_merged <- merge(dfz, dfz2, by="row.names", all=TRUE)
+rownames(df_merged) <- df_merged$Row.names
+df_merged$Row.names <- NULL  # Remove the added column if not needed
+
+df_merged_filtered <- df_merged %>%
+  tibble::rownames_to_column("rowname") %>%  # Convert row names to a column
+  rowwise() %>%
+  filter(any(c_across(-rowname) > 2)) %>%  # Filter while excluding "rowname"
+  ungroup() %>%
+  tibble::column_to_rownames("rowname")  # Restore row names
+
+df_tidy <- df_merged_filtered  %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene") %>%
+  pivot_longer(cols = -Gene, names_to = "Cell", values_to = "Expression")
+
+df_tidy <- df_tidy %>%
+  mutate(Gene = factor(Gene, levels = df_tidy %>%
+    group_by(Gene) %>%
+    summarize(mean_exp = mean(Expression, na.rm = TRUE)) %>%
+    arrange(desc(mean_exp)) %>%
+    pull(Gene)))
+
+df_tidy$Cell <- factor(df_tidy$Cell, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", "Granular Cell", "EG Mesangial Cell", "IG Mesangial Cell", "MD", "TAL A", "TAL B"))  # Replace with your desired order
+
+f1 <- ggplot(df_tidy, aes(x = Cell, y = Gene, fill = Expression)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma", limits = c(0, 10), oob = scales::squish) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+f1
+
+VlnPlot(SO_merge, "Kcnj1", group.by = "Cell")
+
+
+
+# View the merged dataframe
+head(df_merged)
+
+
+gene_unlist <- unlist(gene_unlist)
+
+dfz <- AverageExpression(object = SO_TAL4, features = "Igfbp5", group.by = 'Cell')$RNA
+
+
+dfz <- AverageExpression(object = SO_merge, features = gene_unlist, group.by = "Cell")$RNA
+
+head(SO@meta.data)
+
+genes_in_SO <- rownames(SO@assays$RNA@data)
+missing_genes <- gene_unlist[!gene_unlist %in% genes_in_SO]
+print(missing_genes)
+
+dfz <- AverageExpression(object = SO, features = gene_unlist, group.by = 'Cell', verbose = TRUE)
+```
+
+# Uniprot Drug Interactions
+
+https://www.biostars.org/p/9567892/
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df_drug <- readxl::read_excel(here("drug_targets.xlsx"))
+
+gene_unlist3 <- unlist(df_drug$MOUSE_SYMBOL)
+
+dfz <- AverageExpression(object = SO, features = gene_unlist3, group.by = "Cell")$RNA
+dfz2 <- AverageExpression(object = SO_TAL4, features = gene_unlist3, group.by = "Cell")$RNA
+
+df_merged <- merge(dfz, dfz2, by="row.names", all=TRUE)
+rownames(df_merged) <- df_merged$Row.names
+df_merged$Row.names <- NULL  # Remove the added column if not needed
+
+df_merged_filtered <- df_merged %>%
+  tibble::rownames_to_column("rowname") %>%  # Convert row names to a column
+  rowwise() %>%
+  filter(any(c_across(-rowname) > 10)) %>%  # Filter while excluding "rowname"
+  ungroup() %>%
+  tibble::column_to_rownames("rowname")  # Restore row names
+
+df_tidy <- df_merged_filtered  %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene") %>%
+  pivot_longer(cols = -Gene, names_to = "Cell", values_to = "Expression")
+
+df_tidy <- df_tidy %>%
+  mutate(Gene = factor(Gene, levels = df_tidy %>%
+    group_by(Gene) %>%
+    summarize(mean_exp = mean(Expression, na.rm = TRUE)) %>%
+    arrange(desc(mean_exp)) %>%
+    pull(Gene)))
+
+df_tidy$Cell <- factor(df_tidy$Cell, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", "Granular Cell", "EG Mesangial Cell", "IG Mesangial Cell", "MD", "TAL A", "TAL B"))  # Replace with your desired order
+
+f1 <- ggplot(df_tidy, aes(x = Cell, y = Gene, fill = Expression)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma", limits = c(0, 25), oob = scales::squish) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+f1
+
+
+df_drug_grouped <- df_drug %>%
+  group_by(MOUSE_SYMBOL) %>%
+  summarise(PARENT_PREF_NAME = paste(unique(PARENT_PREF_NAME), collapse = ", "))
+
+df_drug_grouped
+
+df_drug_grouped2 <- df_drug %>%
+  group_by(MOUSE_SYMBOL) %>%
+  summarise(PARENT_PREF_NAME = paste(unique(PARENT_PREF_NAME), collapse = ", ")) %>%
+  mutate(PARENT_PREF_NAME = sapply(strsplit(PARENT_PREF_NAME, ", "), function(x) paste(head(x, 1), collapse = ", ")))
+
+df_drug_grouped2
+
+df2 <-  df_merged_filtered  %>%
+  rownames_to_column(var = "MOUSE_SYMBOL") %>%
+  left_join(df_drug_grouped2, by = "MOUSE_SYMBOL") %>%
+  column_to_rownames(var = "MOUSE_SYMBOL")
+
+df_tidy2 <- df2 %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene") %>%
+  mutate(across(-Gene, as.character)) %>%  # Convert all columns to character, except "Gene"
+  pivot_longer(cols = !c(Gene, PARENT_PREF_NAME), names_to = "app.ident", values_to = "Expression")
+
+df_tidy2 <- df_tidy2 %>%
+  mutate(Expression = as.numeric(as.character(Expression)))
+
+df_tidy2$app.ident <- factor(df_tidy2$app.ident, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", "Granular Cell", "EG Mesangial Cell", "IG Mesangial Cell", "MD", "TAL A", "TAL B"))  # Replace with your desired order
+
+
+f2 <- ggplot(df_tidy2, aes(x = app.ident, y = Gene, fill = Expression)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma", limits = c(0, 50), oob = scales::squish) +
+  theme_minimal() +
+  geom_text(aes(x = n_distinct(df_tidy2$app.ident) + 1, y = Gene, label = PARENT_PREF_NAME), 
+            size = 3, 
+            hjust = 0, 
+            color = "black",
+            family = "sans") +  # Explicitly set the font family
+  coord_cartesian(xlim = c(1, n_distinct(df_tidy2$app.ident) + 3)) +  # Move tiles to the left
+  theme_classic() +  # Optional, for a cleaner theme
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate and remove bold
+    axis.title.x = element_blank(),  # Remove x-axis title
+    plot.margin = margin(0, 10, 0, 0)  # Increase space further to the right
+  )
+
+f2
+
+
+```
+
+# Test Code
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df_drug <- readxl::read_excel(here("NIHMS80822-supplement-Supplementary_Information_S2.xlsx"))
+
+df_drug_uniprot <- df_drug %>% select(ACCESSION)
+
+ENTREZ_list <- bitr(geneID = df_drug_uniprot$ACCESSION,   #input gene id
+                    fromType = "UNIPROT",           #input id type
+                    toType = "SYMBOL",           #output id type
+                    OrgDb = "org.Hs.eg.db"         #annotation Db
+                    )
+
+
+gene_list <- ENTREZ_list$SYMBOL
+
+# https://www.biostars.org/p/9567892/
+
+convert_human_to_mouse <- function(gene_list) {
+    output = c()
+    mouse_human_genes = read.csv("https://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",sep="\t")
+
+    for(gene in gene_list) {
+          class_key = (mouse_human_genes %>% filter(Symbol == gene & Common.Organism.Name == "human"))[['DB.Class.Key']]
+          if( !identical(class_key, integer(0)) ) {
+            human_genes = (mouse_human_genes %>% filter(DB.Class.Key == class_key & Common.Organism.Name=="mouse, laboratory"))[,"Symbol"]
+            for(human_gene in human_genes) {
+                output = rbind(c(gene, human_gene), output)
+            }
+          }
+     }
+     return (output)
+}
+
+dfx <- convert_human_to_mouse(gene_list)
+
+dfx <- as.data.frame(dfx)
+
+gene_unlist <- unlist(dfx$V2)
+
+dfz <- AverageExpression(object = SO, features = gene_unlist, group.by = 'class.JGA')$SCT
+
+dfz2 <- AverageExpression(object = SO_TAL4, features = gene_unlist, group.by = 'class.TAL')$SCT
+
+dfz <- as.data.frame(dfz)
+
+dfz2 <- as.data.frame(dfz2)
+
+dfz_filtered <- dfz %>%
+  tibble::rownames_to_column("rowname") %>%  # Convert row names to a column
+  rowwise() %>%
+  filter(any(c_across(-rowname) > 1)) %>%  # Filter while excluding "rowname"
+  ungroup() %>%
+  tibble::column_to_rownames("rowname")  # Restore row names
+
+
+dfz_filtered <- dfz2 %>%
+  rowwise() %>%
+  filter(any(c_across(everything()) > 1)) %>%
+  ungroup()
+
+df_tidy <- dfz_filtered %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene") %>%
+  pivot_longer(cols = -Gene, names_to = "class.JGA", values_to = "Expression")
+
+
+df_tidy <- dfz_filtered %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene") %>%
+  pivot_longer(cols = -Gene, names_to = "class.JGA", values_to = "Expression")
+
+df_tidy <- dfz %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Gene") %>%
+  pivot_longer(cols = -Gene, names_to = "class.JGA", values_to = "Expression") %>%
+  mutate(
+    class_rank = case_when(
+      class.JGA == "Afferent VSMC" ~ 1,
+      class.JGA == "Efferent VSMC" ~ 2,
+      class.JGA == "EG Mesangial Cell" ~ 3,
+      class.JGA == "IG Mesangial Cell" ~ 4,
+      class.JGA == "Granular Cell" ~ 5,
+      class.JGA == "Pericyte" ~ 6,
+      TRUE ~ 7  # Default rank for any other class
+    )
+  ) %>%
+  arrange(class_rank, desc(Expression)) %>%
+  select(-class_rank)
+               
+df_tidy <- df_tidy %>%
+  mutate(Gene = factor(Gene, levels = df_tidy %>%
+    group_by(Gene) %>%
+    summarize(mean_exp = mean(Expression, na.rm = TRUE)) %>%
+    arrange(desc(mean_exp)) %>%
+    pull(Gene)))
+
+f1 <- ggplot(df_tidy, aes(x = class.TAL, y = Gene, fill = Expression)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+f1
+
+
+df_tidy <- df_tidy %>%
+  mutate(
+    class.JGA = factor(class.JGA, levels = unique(class.JGA)),  # Preserve original order
+    Gene = factor(Gene, levels = unique(Gene))  # Preserve original order
+  )
+
+df_tidy_filtered <- df_tidy %>%
+  filter(Expression > 1)  # Keep only rows where Expression > 20
+
+f1 <- ggplot(df_tidy, aes(x = class.JGA, y = Gene, fill = Expression)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma", na.value = "grey") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8)
+  ) + 
+  theme_classic()
+
+f1
+
+# Graph with geom_tile
+
+f1 <- ggplot(df_tidy, aes(x = class.JGA, y = Gene, fill = Expression)) +
+  geom_tile()
+
+f1
+
+dfxx <- inner_join(dfx, ENTREZ_list, by = c("V1" = "SYMBOL"))
+
+dfxxx <- inner_join(dfxx, df_drug, by = c("UNIPROT" = "ACCESSION"))
+
+dfxxx_filtered <- dfxxx %>%
+  filter(Interaction == "Yes")
+
+
+dfxxx_filtered <- dfxxx %>%
+  filter(V2 %in% df_tidy_filtered$Gene)
+
+df_x2 <- inner_join(dfxxx_filtered, df_tidy, by = c("V2" = "Gene"))
+
+df_x2_filtered <- df_x2 %>%
+  filter(class.JGA == "EG Mesangial Cell")
+
+```
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+VlnPlot(SO, "Kcnq5")
+VlnPlot(SO, "Kcnq5", assay = "RNA")
+
+VlnPlot(SO, "Nr3c2")
+
+VlnPlot(SO, "Pdgfrb")
+
+VlnPlot(SO, "Cspg4")
+
+VlnPlot(SO_merge, "Sema6a")
+VlnPlot(SO_merge, "Plxna2")
+
+
+VlnPlot(SO_merge, "Efnb2")
+VlnPlot(SO_merge, "Ephb2")
+VlnPlot(SO_merge, "Ephb1")
+
+
+```
+
+# For Janos
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+markers.to.plot1 <- c("P2rx1", "P2rx2", "P2rx3", "P2rx4", "P2rx5", "P2rx6", "P2rx7", "P2ry1", "P2ry2", "P2ry4", "P2ry6", "P2ry12", "P2ry13", "P2ry14")
+
+DotPlot(SO,
+features = markers.to.plot1,
+dot.scale = 8,
+dot.min = 0,
+scale.max = 30,
+scale.min = 0,
+col.min = -2.5,
+col.max = 2.5,
+scale = T,
+assay = "RNA") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+markers.to.plot2 <- c("Gucy1", "Ptger1", "Ptger2", "Ptger3", "Ptger4", "Tbxa2r")
+
+DotPlot(SO,
+features = markers.to.plot2,
+dot.scale = 8,
+dot.min = 0,
+scale.max = 20,
+scale.min = 0,
+col.min = -2.5,
+col.max = 2.5,
+scale = T,
+assay = "RNA") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+
+markers.to.plot2b <- c("Pappa2, Igfbp2", "Igfbp3", "Igfbp4", "Igfbp5", "Igfbp6", "Igfbp7", "Igfbp1")
+
+DotPlot(SO,
+features = markers.to.plot2b,
+dot.scale = 8,
+dot.min = 0,
+scale.max = 100,
+scale.min = 0,
+col.min = -2.5,
+col.max = 2.5,
+scale = T,
+assay = "RNA") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+ 
+markers.to.plot2c <- c("F2r", "Ccn1", "Itga8", "Itgab1", "Bmp7", "Bmp3", "Bmpr1a", "Acvr1", "Acvr2b", "Sfrp1")
+
+DotPlot(SO,
+features = markers.to.plot2c,
+dot.scale = 8,
+dot.min = 0,
+scale.max = 100,
+scale.min = 0,
+col.min = -2.5,
+col.max = 2.5,
+scale = T,
+assay = "RNA") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+markers.to.plot3 <- c("Fzd1", "Fzd2", "Fzd3", "Fzd4", "Fzd5", "Fzd6", "Fzd7", "Fzd8", "Fzd9", "Fzd10")
+
+DotPlot(SO,
+features = markers.to.plot3,
+dot.scale = 8,
+dot.min = 0,
+scale.max = 10,
+scale.min = 0,
+col.min = -2.5,
+col.max = 2.5,
+scale = T,
+assay = "RNA") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+markers.to.plot4 <- c("Plau", "Plat", "Fga", "Fgb", "Fgg")
+
+DotPlot(SO,
+features = markers.to.plot4,
+dot.scale = 8,
+dot.min = 0,
+scale.max = 10,
+scale.min = 0,
+col.min = -2.5,
+col.max = 2.5,
+scale = T,
+assay = "RNA") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+```
+
+
+# Session Info
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+sessionInfo()
+
+```
+
+
+  

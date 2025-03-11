@@ -1,0 +1,174 @@
+---
+title: "Renaming JGA Objects"
+author: "Jonathan Nelson"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+    number_sections: yes
+    theme: bootstrap
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("tibble")) {install.packages("tibble"); require("tibble")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("RColorBrewer")) {install.packages("RColorBrewer"); require("RColorBrewer")} #color
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("DESeq2")) {BiocManager::install('DESeq2'); require("DESeq2")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("stringr")) {install.packages("stringr"); require("stringr")}
+if (!require("car")) {install.packages("car"); require("car")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("readxl")) {install.packages("readxl"); require("readxl")}
+if (!require("data.table")) {install.packages("data.table"); require("data.table")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("kableExtra")) {install.packages("kableExtra"); require("kableExtra")} # for color brewer
+if (!require("gplots")) {install.packages("gplots"); require("gplots")} # for color brewer
+if (!require("clusterProfiler")) {BiocManager::install('clusterProfiler'); require("clusterProfiler")}
+if (!require("enrichplot")) {BiocManager::install('enrichplot'); require("enrichplot")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")} # for data frame transformation
+library("EnhancedVolcano")
+library(UpSetR)
+library(ComplexHeatmap)
+#install.packages("ggtext")
+library(ggtext)
+library(CellChat)
+library(patchwork)
+library(sjmisc)
+options(stringsAsFactors = FALSE)
+
+```
+
+# Increase Globals
+
+```{r}
+options(future.globals.maxSize = 74 * 1024^3) # 55 GB
+getOption("future.globals.maxSize") #59055800320
+```
+
+
+# Load Pdgfrb INTACT Dataset
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO <- readRDS(here("Datasets", "INTACT_JGA.rds"))
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+DimPlot(SO)
+
+head(SO@meta.data)
+
+```
+
+# Rename and Relevel INTACT
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO@meta.data <- SO@meta.data %>%
+  mutate(class.JGA = dplyr::recode(class.JGA, "Granular Cell" = "Renin Cell"))
+
+SO@meta.data$class.JGA <- factor(SO@meta.data$class.JGA, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", "Renin Cell", "EG Mesangial Cell", "IG Mesangial Cell")) 
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+DimPlot(SO)
+
+SO_INTACT <- SO
+
+```
+
+# Load DKD JGA Dataset
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO <- readRDS(here("Datasets", "DKD_JGA_2.rds"))
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+DimPlot(SO)
+
+head(SO@meta.data)
+
+SO
+
+```
+
+# Recluster DKD
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, results='hide'}
+
+SO@meta.data$X <- NULL
+SO@meta.data$SCT_snn_res.2 <- NULL
+SO@meta.data$seurat_clusters <- NULL
+
+SO <- SCTransform(SO) %>%
+    RunPCA() %>%
+    FindNeighbors(dims = 1:10) %>%
+    FindClusters(resolution = .5) %>%
+    RunUMAP(dims = 1:10)
+
+DimPlot(SO, reduction = "umap")
+
+DimPlot(SO, reduction = "umap", group.by = "class.JGA")
+
+
+```
+
+# Rename and Relevel DKD
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO@meta.data <- SO@meta.data %>%
+  mutate(class.JGA = dplyr::recode(class.JGA, "Granular Cell" = "Renin Cell"))
+
+SO@meta.data$class.JGA <- factor(SO@meta.data$class.JGA, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", "Renin Cell", "EG Mesangial Cell", "IG Mesangial Cell")) 
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+DimPlot(SO, reduction = "umap", group.by = "class.JGA")
+
+SO_DKD <- SO
+
+```
+
+# Save Objects in New Folder
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+renamed <- "renamed"
+
+#Create Folder for Dataset
+if (!dir.exists(here("datasets", renamed))) {dir.create(here("datasets", renamed))}
+
+saveRDS(SO_INTACT, here("datasets", renamed, "INTACT_JGA_renamed.rds"))
+saveRDS(SO_DKD, here("datasets", renamed, "DKD_JGA_renamed.rds"))
+```
+
+# Session Info
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+sessionInfo()
+
+```
+
+
+  

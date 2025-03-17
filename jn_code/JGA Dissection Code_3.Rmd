@@ -63,7 +63,7 @@ options(stringsAsFactors = FALSE)
 
 rm(list = ls())
 
-SO <- readRDS(here("Datasets", "INTACT_JGA.rds"))
+SO <- readRDS(here("Datasets","renamed", "INTACT_JGA_renamed.rds"))
 
 Idents(SO) <- SO@meta.data$class.JGA
 
@@ -78,6 +78,27 @@ SO
 options(future.globals.maxSize = 74 * 1024^3) # 55 GB
 getOption("future.globals.maxSize") #59055800320
 ```
+
+# Set color pallate
+```{r}
+
+population_colors <- c(
+  "Pericyte" = "#66C2A5",
+  "Efferent VSMC" = "#FC8D62",
+  "Afferent VSMC" = "#8DA0CB",
+  "Renin Cell" = "#E78AC3",
+  "EG Mesangial Cell" = "#A6D854",
+  "IG Mesangial Cell" = "#FFD92F"
+)
+
+DimPlot(SO, group.by = "class.JGA", cols = population_colors)
+
+
+
+```
+
+
+
 
 # Load Slc12a1 Datasets
 

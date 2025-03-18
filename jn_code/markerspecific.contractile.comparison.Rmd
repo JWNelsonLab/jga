@@ -1,0 +1,663 @@
+---
+title: "Comparing Contractile Markers and Creating Paper Image"
+author: "Arjun Lakshmanan"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    number_sections: yes
+    theme: journal
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install Packages 
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("devtools")) {install.packages("devtools"); require("devtools")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("sjmisc")) {install.packages("sjmisc"); require("sjmisc")}
+if (!require("gridExtra")) {install.packages("gridExtra"); require("gridExtra")}
+if (!require("gplots")) {install.packages("gplots"); require("gplots")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+
+
+set.seed(12345)
+#here::set_here()
+here()
+```
+
+
+
+# Objective 
+
+The goal of this file is to compare the transcriptional profile of our Contractile cell dataset (INTACT) with Humphrey's (DKD) as well as creating figures accordingly. 
+
+# Load INTACT Dataset (Collected)
+
+Th
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+population_colors <- c(
+  "Pericyte" = "#66C2A5",
+  "Efferent VSMC" = "#FC8D62",
+  "Afferent VSMC" = "#8DA0CB",
+  "Renin Cell" = "#E78AC3",
+  "EG Mesangial Cell" = "#A6D854",
+  "IG Mesangial Cell" = "#FFD92F"
+)
+
+light_population_colors <- c(
+  "Pericyte" = "#A8D8C5",       # Lighter Pericyte
+  "Efferent VSMC" = "#FDBF96",    # Lighter Efferent VSMC
+  "Afferent VSMC" = "#B8C9E1",    # Lighter Afferent VSMC
+  "Renin Cell" = "#F2A4D6",       # Lighter Renin Cell
+  "EG Mesangial Cell" = "#B9E09B", # Lighter EG Mesangial Cell
+  "IG Mesangial Cell" = "#FFEB88"  # Lighter IG Mesangial Cell
+)
+
+very_light_population_colors <- c(
+  "Pericyte" = "#D4EDE4",       # Very light Pericyte
+  "Efferent VSMC" = "#FFE0CC",  # Very light Efferent VSMC
+  "Afferent VSMC" = "#DEE5F2",  # Very light Afferent VSMC
+  "Renin Cell" = "#F8D3E8",     # Very light Renin Cell
+  "EG Mesangial Cell" = "#DDF2C7", # Very light EG Mesangial Cell
+  "IG Mesangial Cell" = "#FFF4C2"  # Very light IG Mesangial Cell
+)
+
+colorblind_friendly_population_colors <- c(
+  "Pericyte" = "#56B4E9",        # Blue
+  "Efferent VSMC" = "#E69F00",   # Orange
+  "Afferent VSMC" = "#009E73",   # Green
+  "Renin Cell" = "#F0E442",      # Yellow
+  "EG Mesangial Cell" = "#0072B2", # Deep Blue
+  "IG Mesangial Cell" = "#D55E00", # Reddish-Orange
+  "TAL A" = "#CC79A7",        # Purple (distinct from others)
+  "TAL B" = "#882255",       # Dark Red (strong contrast)
+  "MD" = "#999999" # Gray (neutral but visible)
+)
+
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+SO.INTACT <- readRDS(here("Datasets", "renamed", "INTACT_JGA_renamed.rds"))
+DimPlot(SO.INTACT, group.by = "class.JGA", cols = colorblind_friendly_population_colors)
+
+
+```
+
+
+# Load DKD Dataset 
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+SO.DKD <- readRDS(here("Datasets", "renamed", "DKD_JGA_renamed.rds"))
+
+
+Idents(SO.DKD) <- SO.DKD@meta.data$class.JGA
+
+DimPlot(SO.DKD, group.by = "class.JGA", cols = light_population_colors, reduction = "umap")
+
+```
+
+
+
+# ForLoop INTACT DEG Lists
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+markers_result <- list()
+
+clusters <- unique(SO.INTACT$class.JGA)
+
+for (i in clusters) {
+  
+  # Replace spaces with underscores in cluster names
+  clean_name <- gsub(" ", "_", i)
+  
+  # Find markers for the cluster
+  markers <- FindMarkers(SO.INTACT, ident.1 = i, group.by = "class.JGA", min.pct = 0.1, logfc.threshold = 0.25)
+  markers <- markers %>%
+    rownames_to_column(var = "gene") %>%
+    arrange(desc(avg_log2FC))
+  
+  markers_result[[clean_name]] <- markers
+  
+  # Create variable name without spaces
+  var_name <- paste0(clean_name, ".INTACT.markers") 
+  assign(var_name, markers, envir = .GlobalEnv)
+
+}
+
+
+
+```
+
+
+# ForLoop DKD DEG Lists
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+markers_result <- list()
+
+clusters <- unique(SO.DKD$class.JGA)
+
+
+for (i in clusters) {
+  
+  clean_name <- gsub(" ", "_", i)
+  
+  markers <- FindMarkers(SO.DKD, ident.1 = i, group.by = "class.JGA", min.pct = 0.1, logfc.threshold = 0.25)
+  markers <- markers %>%
+    rownames_to_column(var = "gene") %>%
+    arrange(desc(avg_log2FC))
+  
+  markers_result[[clean_name]] <- markers
+  
+  var_name <- paste0(clean_name, ".DKD.markers") 
+  assign(var_name, markers, envir = .GlobalEnv)
+
+}
+
+
+
+```
+
+
+
+
+
+# Name Lists 
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+INTACT_list <- list(`Pericyte.INTACT.markers`, `Renin_Cell.INTACT.markers`, `Efferent_VSMC.INTACT.markers`, `Afferent_VSMC.INTACT.markers`, `IG_Mesangial_Cell.INTACT.markers`, `EG_Mesangial_Cell.INTACT.markers`)
+
+
+DKD_list <- list(`Pericyte.DKD.markers`, `Renin_Cell.DKD.markers`, `Efferent_VSMC.DKD.markers`, `Afferent_VSMC.DKD.markers`, `IG_Mesangial_Cell.DKD.markers`, `EG_Mesangial_Cell.DKD.markers`)
+
+
+names(INTACT_list) <- c("Pericyte.INTACT.markers", "Renin Cell.INTACT.markers", "Efferent VSMC.INTACT.markers", "Afferent VSMC.INTACT.markers", "IG_Mesangial_Cell.INTACT.markers", "EG_Mesangial_Cell.INTACT.markers")
+
+
+names(DKD_list) <- c("Pericyte.DKD.markers", "Renin Cell.DKD.markers", "Efferent VSMC.DKD.markers", "Afferent VSMC.DKD.markers", "IG_Mesangial_Cell.DKD.markers", "EG_Mesangial_Cell.DKD.markers")
+
+
+
+
+
+
+```
+
+
+
+
+# Scatterplot Forloop + R-squared Table
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(broom)
+
+# Initialize table for storing R-squared values and slopes
+rsq_table <- data.frame(matrix(ncol = 7, nrow = (length(INTACT_list) * length(DKD_list))))
+names(rsq_table) <- c("INTACT", "DKD", "R-squared", "Slope", "Shared_DEGs", "INTACT_UniqueDEGs", "DKD_UniqueDEGs")
+
+# List to store scatterplots
+scatterplots <- list()
+
+## START FOR {LOOP} LEVEL 1 ##
+for (i in 1:length(INTACT_list)) {
+  
+  x.markers <- INTACT_list[[i]]
+  x.markers_tb <- x.markers %>%
+    data.frame() %>%
+    as_tibble()
+  
+  ## START FOR {LOOP} LEVEL 2 ##
+  for (j in 1:length(DKD_list)) {
+    y.markers <- DKD_list[[j]]
+    y.markers_tb <- y.markers %>%
+      data.frame() %>%
+      as_tibble()
+    
+    # X-Y DEGs Intersection Table
+    xy.comp <- inner_join(x.markers_tb, y.markers_tb, by = "gene")
+
+    # Ensure enough genes exist for regression
+    if(nrow(xy.comp) > 1) { 
+      
+      # Selecting only relevant columns
+      xy.comp.R2 <- xy.comp %>%
+        dplyr::select(avg_log2FC.x, avg_log2FC.y)
+      
+      # Correct regression model
+      model <- lm(avg_log2FC.y ~ avg_log2FC.x, data = xy.comp.R2)
+      
+      # Extract slope and correct R² calculation
+      slope <- coef(model)["avg_log2FC.x"]
+      n_rsq <- summary(model)$r.squared
+
+    } else {
+      slope <- NA
+      n_rsq <- NA  # Not enough data for a valid regression
+    }
+
+    # Calculate DEGs counts
+    Shared_DEGs <- nrow(xy.comp)
+    INTACT_UniqueDEGs <- nrow(x.markers_tb) - Shared_DEGs
+    DKD_UniqueDEGs <- nrow(y.markers_tb) - Shared_DEGs
+
+    # Add to R-squared table
+    index <- ((i-1) * length(DKD_list)) + j
+    rsq_table[index, 1] = names(INTACT_list)[i]
+    rsq_table[index, 2] = names(DKD_list)[j]
+    rsq_table[index, 3] = n_rsq
+    rsq_table[index, 4] = slope  # Adding the slope to the table
+    rsq_table[index, 5] = Shared_DEGs
+    rsq_table[index, 6] = INTACT_UniqueDEGs
+    rsq_table[index, 7] = DKD_UniqueDEGs
+
+    # Generate Scatterplot for each pair
+    p <- ggplot(xy.comp, aes(x = avg_log2FC.x, y = avg_log2FC.y, label = gene)) +
+      geom_point(color = "#636EFA", alpha = 0.6, size = 2.5) +  # Blue dots with transparency
+      geom_smooth(method = "lm", color = "#1E90FF", linetype = "dashed", se = FALSE) + # Best-fit regression line
+      geom_text_repel(size = 4, segment.size = 0.2, segment.color = "grey50") +  # Gene labels
+      annotate("text", x = min(xy.comp$avg_log2FC.x) + 0.2, 
+               y = max(xy.comp$avg_log2FC.y) - 0.2, 
+               label = paste0("R² = ", round(n_rsq, 3), "\nSlope = ", round(slope, 3)), 
+               color = "black", size = 6, hjust = 0) +
+      labs(
+        title = paste(names(INTACT_list)[i], "vs", names(DKD_list)[j]),
+        x = paste("avg_log2FC -", names(INTACT_list)[i]),
+        y = paste("avg_log2FC -", names(DKD_list)[j])
+      ) +
+      theme_minimal(base_size = 14) +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.title = element_text(face = "bold"),
+        axis.line = element_line(color = "black", size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+      )
+
+    # Store the plot
+    scatterplots[[paste(names(INTACT_list)[i], names(DKD_list)[j], sep = "_vs_")]] <- p
+  }
+}
+
+# Sort and print the R-squared table
+rsq_table <- rsq_table %>%
+  arrange(desc(`R-squared`))
+
+print(rsq_table)
+
+# Display all scatterplots
+for (plot_name in names(scatterplots)) {
+  print(scatterplots[[plot_name]])
+}
+
+
+
+```
+
+
+
+
+# Create HeatMap of Datasets 
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+
+df <- rsq_table %>%
+                dplyr::select(INTACT, DKD, "R-squared") %>%
+                mutate(INTACT = sub("_Named_", " ", INTACT)) %>%
+                mutate(DKD = sub("_Named_", " ", DKD)) %>%
+                pivot_wider(names_from = DKD, values_from = "R-squared") %>%
+                column_to_rownames(var = "INTACT") %>%
+                as.matrix()
+
+
+library(corrplot)
+## Correlation Plot
+corrplot(df, method = 'color')
+
+
+
+
+DimPlot(SO.INTACT, group.by = "class.JGA")
+
+
+
+
+```
+
+
+
+
+# Specific Marker Expression 
+
+
+
+
+
+
+
+# Figures 
+
+## First Panel 
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+p1 <- DimPlot(SO.DKD, reduction = "umap", cols = very_light_population_colors)  + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("UMAP - DKD Contractile Clusters") 
+
+
+p2 <- DimPlot(SO.INTACT, reduction = "umap", group.by = "class.JGA", cols = population_colors) + 
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("UMAP - INTACT Contractile Clusters") 
+
+print(p1)
+print(p2)
+
+
+
+
+```
+
+
+## Panel 2
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center', fig.length = 8, fig.width = 8}
+
+library(patchwork)
+
+library(ggplot2)
+library(patchwork)
+
+Idents(SO.DKD) <- SO.DKD@meta.data$class.JGA
+Idents(SO.INTACT) <- SO.INTACT@meta.data$class.JGA
+
+Idents(SO.DKD) <- SO.DKD@meta.data$class.JGA
+Idents(SO.INTACT) <- SO.INTACT@meta.data$class.JGA
+
+
+markers.to.plot <- c("Nkain2", 
+                     "Col23a1", # Adora1 didn't look good 
+                     "Ren1", 
+                     "Hpse2", 
+                     "Tenm2", 
+                     "Tshz2")
+
+
+
+#cluster_order <- c("Pericyte", "Efferent VSMC", "Afferent VSMC", "Renin Cell", "EG Mesangial Cell", "IG Mesangial Cell")
+
+#SO.DKD@meta.data$class.JGA <- factor(SO.DKD@meta.data$class.JGA, levels = cluster_order)
+
+
+p3 <- DotPlot(SO.DKD, features = markers.to.plot) +
+  coord_flip() +
+  ggtitle("Gene Expression Across Clusters - DKD") + 
+  xlab("Clusters") + ylab("Marker Genes") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+
+p4 <- DotPlot(SO.INTACT, features = markers.to.plot) +
+  coord_flip() +
+  ggtitle("Gene Expression Across Clusters - INTACT") + 
+  xlab("Clusters") + ylab("Marker Genes") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
+
+p3
+p4
+
+
+
+```
+
+
+
+## Panel 3
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center', fig.length = 15, fig.width = 10}
+
+
+xy.comp <- inner_join(IG_Mesangial_Cell.INTACT.markers, IG_Mesangial_Cell.DKD.markers, by = "gene")
+
+df.upper <- subset(xy.comp, avg_log2FC.x > 1 & avg_log2FC.y > 1)
+df.lower <- subset(xy.comp, avg_log2FC.x < -1 & avg_log2FC.y < -1)
+
+model <- lm(avg_log2FC.y ~ avg_log2FC.x, data = xy.comp)
+
+slope <- coef(model)["avg_log2FC.x"]
+r_squared <- summary(model)$r.squared
+
+
+
+library(ggplot2)
+library(ggrepel)
+
+xy.comp <- inner_join(IG_Mesangial_Cell.INTACT.markers, IG_Mesangial_Cell.DKD.markers, by = "gene")
+
+p5 <- ggplot(xy.comp, aes(x = avg_log2FC.x, y = avg_log2FC.y, label = gene)) +
+  
+  geom_point(color = "#636EFA", alpha = 0.6, size = 2.5) + 
+  
+  geom_point(data = df.upper, color = "#EF553B", size = 3.5) + 
+  geom_point(data = df.lower, color = "#00CC96", size = 3.5) + 
+  geom_smooth(method = "lm", color = "#1E90FF", linetype = "dashed", se = FALSE) +
+  
+  geom_text_repel(data = rbind(df.upper, df.lower), segment.size = 0.2, segment.color = "grey50", 
+                  size = 5) +
+    annotate("text", x = min(xy.comp$avg_log2FC.x) + 0.2, 
+           y = max(xy.comp$avg_log2FC.y) - 0.2, 
+           label = paste0("R² = ", round(r_squared, 3), "\nSlope = ", round(slope, 3)), 
+           color = "black", size = 6, hjust = 0) +
+
+  
+  labs(
+    title = "Intraglomerular Mesangial Gene Expression: INTACT vs DKD",
+    x = "Average log2FC - INTACT IG Mesangial",
+    y = "Average log2FC - DKD IG Mesangial"
+  ) +
+  
+  theme_minimal(base_size = 16) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold"), 
+    axis.line = element_line(color = "black", size = 1),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank()  
+  )
+
+
+p5
+
+
+
+
+```
+
+
+
+## Panel 4 
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center', fig.length = 13, fig.width - 15}
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(reshape2)
+library(RColorBrewer)
+
+rsq_table <- rsq_table %>%
+  mutate(
+    INTACT = gsub("\\.", " ", INTACT),
+    DKD = gsub("\\.", " ", DKD),
+    INTACT = gsub("INTACT markers", "", INTACT), 
+    DKD = gsub("DKD markers", "", DKD),
+    INTACT = gsub("_", " ", INTACT),
+    DKD = gsub("_", " ", DKD)
+  )
+
+df <- rsq_table %>%
+  dplyr::select(INTACT, DKD, `R-squared`) %>%
+  pivot_wider(names_from = DKD, values_from = `R-squared`) %>%
+  column_to_rownames(var = "INTACT") %>%
+  as.matrix()
+
+cor_long <- melt(df)
+
+p6 <- ggplot(cor_long, aes(x = Var1, y = Var2, fill = value)) +
+  
+  geom_tile(color = "white", size = 0.3) +
+  
+  geom_text(aes(label = sprintf("%.2f", value)), size = 5, fontface = "bold",
+            color = ifelse(cor_long$value > 0.5, "white", "black")) + 
+  
+  scale_fill_gradientn(colors = rev(brewer.pal(9, "RdBu")), 
+                       limits = c(0, 1), name = "R²") +
+  
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 14, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 14, face = "bold", color = "black"),
+    axis.title = element_text(size = 16, face = "bold"),
+    panel.grid = element_blank(),  # No distracting grid lines
+    legend.position = "right",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(size = 20, face = "bold", hjust = 0.5)
+  ) +
+  
+  labs(title = "Correlation of Contractile Cell Clusters (INTACT vs DKD)",
+       x = "DKD Clusters",
+       y = "INTACT Clusters")
+
+p6
+
+## JWN Coding
+
+# Define the desired order
+cor_long$Var1 <- trimws(cor_long$Var1)
+cor_long$Var2 <- trimws(cor_long$Var2)
+
+# Convert Var1 and Var2 into ordered factors
+cor_long$Var1 <- factor(cor_long$Var1, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", 
+                                                  "Renin Cell", "EG Mesangial Cell", "IG Mesangial Cell"))
+cor_long$Var2 <- factor(cor_long$Var2, levels = c("Pericyte", "Efferent VSMC", "Afferent VSMC", 
+                                                  "Renin Cell", "EG Mesangial Cell", "IG Mesangial Cell"))
+
+# Plot
+p6 <- ggplot(cor_long, aes(x = Var2, y = Var1, fill = value)) + 
+  geom_tile(color = "white", size = 0.3) + 
+  geom_text(aes(label = sprintf("%.2f", value)), size = 5, fontface = "bold",
+            color = ifelse(cor_long$value > 0.5, "white", "black")) + 
+  scale_fill_gradientn(colors = rev(brewer.pal(9, "RdBu")), 
+                       limits = c(0, 1), name = "R²") +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 14, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 14, face = "bold", color = "black"),
+    axis.title = element_text(size = 16, face = "bold"),
+    panel.grid = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(size = 20, face = "bold", hjust = 0.5)
+  ) +
+  labs(title = "Correlation between INTACT vs DKD",
+       x = "DKD Clusters",
+       y = "INTACT Clusters") +
+  coord_fixed(ratio = .5)
+
+p6
+
+
+```
+
+
+# Final Figure
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+p1
+p2
+p3
+p4
+p5
+p6
+
+```
+
+
+
+
+# Session Info
+
+```{r sessioninfo, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+sessionInfo()
+
+```
+
+

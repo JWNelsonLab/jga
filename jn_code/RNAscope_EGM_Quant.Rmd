@@ -1,0 +1,1152 @@
+---
+title: "RNAscope EGM Quantification"
+subtitle: ""
+author: "Jonathan Nelson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+    toc_float: 
+      collapsed: false
+      smooth_scroll: false
+    number_sections: yes
+    theme: bootstrap
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, echo=T, error=FALSE, message=FALSE, warning=FALSE}
+
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("SeuratDisk")) {install.packages("SeuratDisk"); require("SeuratDisk")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!requireNamespace('BiocManager', quietly = TRUE)) {install.packages('BiocManager'); require("BiocManager")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("paletteer")) {install.packages("paletteer"); require("paletteer")} # color palette
+if (!require("grDevices")) {install.packages("grDevices"); require("grDevices")} # for grDevices palette
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")} # for data frame transformation
+if (!require("tibble")) {install.packages("tibble"); require("tibble")} # for table transformation
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")} # for table transformation
+library(gridExtra)
+library(grid)
+
+here()
+```
+
+# Load Data
+
+## Rgs5
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Rgs5"
+y <- "Pdgfrb"
+
+df <- read_tsv(here("datasets", paste0(x, ".txt")))
+
+df2 <- read_csv(here("datasets", "snRNAseq_RNAscope_markers.csv"))
+
+SO <- readRDS(here("datasets", "renamed", "INTACT_JGA_renamed.rds"))
+
+DimPlot(SO)
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+# filter df to only include rows with values in the Classification column
+
+df_filtered <- df %>%
+  filter(!is.na(Classification) & Classification != "")
+
+df_filtered2  <- df_filtered  %>%
+  separate(Classification, into = c("Rep", "Mes"), sep = " ", extra = "merge", fill = "right")
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, fill = Mes)) +
+  geom_violin(alpha = 0.5, trim = FALSE) +  # Violin plot with transparency
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jittered points
+  theme_classic() +  # Clean theme
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+df_new <- df_filtered2 %>%
+  select(`Cell: Opal 570 (C2) mean`, `Cell: Opal 690 mean`, Rep, Mes) %>%
+  group_by(Mes)
+
+# Opal 570
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_x <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+print(x)
+
+log2FC_x
+
+# Opal 690
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_Pdgfrb <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+log2FC_Pdgfrb
+
+assign(paste0("df_", x), df_filtered2)
+
+```
+
+## Adora1
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Adora1"
+y <- "Pdgfrb"
+
+df <- read_tsv(here("datasets", paste0(x, ".txt")))
+
+df2 <- read_csv(here("datasets", "snRNAseq_RNAscope_markers.csv"))
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+# filter df to only include rows with values in the Classification column
+
+df_filtered <- df %>%
+  filter(!is.na(Classification) & Classification != "")
+
+df_filtered2  <- df_filtered  %>%
+  separate(Classification, into = c("Rep", "Mes"), sep = " ", extra = "merge", fill = "right")
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, fill = Mes)) +
+  geom_violin(alpha = 0.5, trim = FALSE) +  # Violin plot with transparency
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jittered points
+  theme_classic() +  # Clean theme
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+df_new <- df_filtered2 %>%
+  select(`Cell: Opal 570 (C2) mean`, `Cell: Opal 690 mean`, Rep, Mes) %>%
+  group_by(Mes)
+
+# Opal 570
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_x <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+print(x)
+
+log2FC_x
+
+# Opal 690
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_Pdgfrb <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+log2FC_Pdgfrb
+
+assign(paste0("df_", x), df_filtered2)
+
+```
+
+## Gata3
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Gata3"
+y <- "Pdgfrb"
+
+df <- read_tsv(here("datasets", paste0(x, ".txt")))
+
+df2 <- read_csv(here("datasets", "snRNAseq_RNAscope_markers.csv"))
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+# filter df to only include rows with values in the Classification column
+
+df_filtered <- df %>%
+  filter(!is.na(Classification) & Classification != "")
+
+df_filtered2  <- df_filtered  %>%
+  separate(Classification, into = c("Rep", "Mes"), sep = " ", extra = "merge", fill = "right")
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, fill = Mes)) +
+  geom_violin(alpha = 0.5, trim = FALSE) +  # Violin plot with transparency
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jittered points
+  theme_classic() +  # Clean theme
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+df_new <- df_filtered2 %>%
+  select(`Cell: Opal 570 (C2) mean`, `Cell: Opal 690 mean`, Rep, Mes) %>%
+  group_by(Mes)
+
+# Opal 570
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_x <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+print(x)
+
+log2FC_x
+
+# Opal 690
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_Pdgfrb <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+log2FC_Pdgfrb
+
+assign(paste0("df_", x), df_filtered2)
+
+```
+
+
+## Agtr1a
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Agtr1a"
+y <- "Pdgfrb"
+
+df <- read_tsv(here("datasets", paste0(x, ".txt")))
+
+df2 <- read_csv(here("datasets", "snRNAseq_RNAscope_markers.csv"))
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+# filter df to only include rows with values in the Classification column
+
+df_filtered <- df %>%
+  filter(!is.na(Classification) & Classification != "")
+
+df_filtered2  <- df_filtered  %>%
+  separate(Classification, into = c("Rep", "Mes"), sep = " ", extra = "merge", fill = "right")
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, fill = Mes)) +
+  geom_violin(alpha = 0.5, trim = FALSE) +  # Violin plot with transparency
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jittered points
+  theme_classic() +  # Clean theme
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+df_new <- df_filtered2 %>%
+  select(`Cell: Opal 570 (C2) mean`, `Cell: Opal 690 mean`, Rep, Mes) %>%
+  group_by(Mes)
+
+# Opal 570
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_x <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+print(x)
+
+log2FC_x
+
+# Opal 690
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_Pdgfrb <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+log2FC_Pdgfrb
+
+assign(paste0("df_", x), df_filtered2)
+
+```
+
+
+## Pdgfra
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Pdgfra"
+y <- "Pdgfrb"
+
+df <- read_tsv(here("datasets", paste0(x, ".txt")))
+
+df2 <- read_csv(here("datasets", "snRNAseq_RNAscope_markers.csv"))
+
+```
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+# filter df to only include rows with values in the Classification column
+
+df_filtered <- df %>%
+  filter(!is.na(Classification) & Classification != "")
+
+df_filtered2  <- df_filtered  %>%
+  separate(Classification, into = c("Rep", "Mes"), sep = " ", extra = "merge", fill = "right")
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Classic theme for a clean look
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, fill = Mes)) +
+  geom_violin(alpha = 0.5, trim = FALSE) +  # Violin plot with transparency
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jittered points
+  theme_classic() +  # Clean theme
+  labs(title = paste0(x, " Cell Intensity"),
+       x = "Mes",
+       y = "Cell: Opal 570 (C2) mean") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotates x-axis labels
+    plot.title = element_text(hjust = 0.5)  # Centers the title
+  )
+
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+
+ggplot(df_filtered2, aes(x = Mes, y = `Cell: Opal 690 mean`, color = as.factor(Rep))) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Jitter for better visibility
+  theme_minimal() +
+  labs(title = paste0(y, " Cell Intensity"),  
+       x = "Mes",
+       y = "Cell: Opal 690 mean",
+       color = "Rep") +  # Legend label
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_classic()
+
+df_new <- df_filtered2 %>%
+  select(`Cell: Opal 570 (C2) mean`, `Cell: Opal 690 mean`, Rep, Mes) %>%
+  group_by(Mes)
+
+# Opal 570
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 570 (C2) mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_x <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+print(x)
+
+log2FC_x
+
+# Opal 690
+
+# Filter data into two groups
+group_IGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "IGM"]
+group_EGM <- df_new$`Cell: Opal 690 mean`[df_new$Mes == "EGM"]
+
+# Perform t-test
+t_test_result <- t.test(group_IGM, group_EGM, var.equal = TRUE) # Use var.equal=FALSE for Welch's t-test
+
+# Print results
+print(t_test_result)
+
+log2FC_Pdgfrb <- log2(mean(group_EGM, na.rm = TRUE) / mean(group_IGM, na.rm = TRUE))
+
+log2FC_Pdgfrb
+
+assign(paste0("df_", x), df_filtered2)
+
+```
+
+# Figures
+
+## Rgs5
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+population_colors <- c(
+  "Pericyte" = "#66C2A5",
+  "Efferent VSMC" = "#FC8D62",
+  "Afferent VSMC" = "#8DA0CB",
+  "Renin Cell" = "#E78AC3",
+  "EG Mesangial Cell" = "#A6D854",
+  "IG Mesangial Cell" = "#FFD92F"
+)
+
+light_population_colors <- c(
+  "Pericyte" = "#A8D8C5",       # Lighter Pericyte
+  "Efferent VSMC" = "#FDBF96",    # Lighter Efferent VSMC
+  "Afferent VSMC" = "#B8C9E1",    # Lighter Afferent VSMC
+  "Renin Cell" = "#F2A4D6",       # Lighter Renin Cell
+  "EG Mesangial Cell" = "#B9E09B", # Lighter EG Mesangial Cell
+  "IG Mesangial Cell" = "#FFEB88"  # Lighter IG Mesangial Cell
+)
+
+x <- "Rgs5"
+
+i <- paste0("df_", x)
+
+f1 <- VlnPlot(SO, x, idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+f1 <- VlnPlot(SO, "Pdgfrb", idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 690 mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+
+```
+
+## Adora1
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Adora1"
+
+i <- paste0("df_", x)
+
+f1 <- VlnPlot(SO, x, idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+f1 <- VlnPlot(SO, "Pdgfrb", idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 690 mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+
+
+```
+
+## Gata3
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Gata3"
+
+i <- paste0("df_", x)
+
+f1 <- VlnPlot(SO, x, idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+f1 <- VlnPlot(SO, "Pdgfrb", idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 690 mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+
+
+```
+
+## Agtr1a
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Agtr1a"
+
+i <- paste0("df_", x)
+
+f1 <- VlnPlot(SO, x, idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+f1 <- VlnPlot(SO, "Pdgfrb", idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 690 mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+
+
+```
+
+## Pdgfra
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Pdgfra"
+
+i <- paste0("df_", x)
+
+f1 <- VlnPlot(SO, x, idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 570 (C2) mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+f1 <- VlnPlot(SO, "Pdgfrb", idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(get(i), aes(x = Mes, y = `Cell: Opal 690 mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+
+
+```
+
+
+
+## Pdgfrb
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+x <- "Pdgfrb"
+
+f1 <- VlnPlot(SO, x, idents = c("IG Mesangial Cell", "EG Mesangial Cell"), cols = population_colors, pt.size = 1) +
+  theme(legend.position = "none") +  # Remove legend
+  ggtitle("snRNAseq") +  # Change title
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Change X-axis labels
+  theme(
+    axis.title.x = element_blank(),  # Remove x-axis label
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)  # Title font size and bold
+  ) +
+  ylab("snRNAseq Expression Level")  # Change y-axis label
+
+
+f2 <- ggplot(df_Agtr1a, aes(x = Mes, y = `Cell: Opal 690 mean`, color = Mes)) +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.7) +  # Adds jitter to avoid overlap
+  theme_classic() +  # Clean look
+  labs(title = "RNAscope",  # Change title
+       x = NULL,  # Remove x-axis label
+       y = "Mean RNAscope Intensity") +  # Change Y-axis label
+  scale_x_discrete(labels = c("IG Mesangial Cell" = "IGM", "EG Mesangial Cell" = "EGM")) +  # Rename categories
+  scale_color_manual(values = c("IGM" = "#FFD92F", "EGM" = "#A6D854")) +  # Manually assign colors to dots
+  theme(
+    text = element_text(size = 16),  # Increase font size globally
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),  # Title font size and bold
+    legend.position = "none"  # Remove the legend
+  )
+
+f2 <- f2 + theme(
+  plot.margin = margin(t = 10, b = 8),  # Adjust the top and bottom margins
+  plot.title = element_text(size = 18)   # Optional: Adjust title size if needed
+)
+
+grid.arrange(f1, f2, ncol = 2)
+
+```
+
+# Session Info
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+sessionInfo()
+
+```

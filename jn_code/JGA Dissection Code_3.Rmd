@@ -71,6 +71,15 @@ DimPlot(SO)
 
 SO
 
+FeaturePlot(SO, "Adamts5")
+VlnPlot(SO, "Adamts5")
+
+FeaturePlot(SO, "Adamts1")
+VlnPlot(SO, "Adamts1")
+
+VlnPlot(SO, "Epo")
+
+
 ```
 
 # Increase Globals

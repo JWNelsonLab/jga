@@ -1,0 +1,277 @@
+---
+title: "Analyzing Humphreys Fibrosis Dataset"
+author: "Arjun Lakshmanan"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    number_sections: yes
+    theme: journal
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install Packages 
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("devtools")) {install.packages("devtools"); require("devtools")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("sjmisc")) {install.packages("sjmisc"); require("sjmisc")}
+if (!require("gridExtra")) {install.packages("gridExtra"); require("gridExtra")}
+if (!require("gplots")) {install.packages("gplots"); require("gplots")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("biomaRt")) {install.packages("biomaRt"); require("biomaRt")}
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+
+
+
+set.seed(12345)
+#here::set_here()
+here()
+```
+
+
+
+# Objective 
+
+
+
+
+# Load Humphreys Dataset 
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+library(Matrix)
+library(data.table)
+library(R.utils)
+
+
+triplets <- fread("GSM5733424_count.mtx", header = FALSE)
+genes <- fread("GSE190887_gene_name_annotate.txt", header = FALSE)
+cells <- fread("GSE190887_cell_annotate.txt", header = FALSE)
+metadata <- fread("GSE190887_meta_cell_type_sample.csv")
+
+
+
+colnames(triplets) <- c("i", "j", "x")
+
+counts <- sparseMatrix(i = triplets$i, j = triplets$j, x = triplets$x)
+
+
+rownames(counts) <- genes$V1
+colnames(counts) <- cells$V1
+
+seurat_obj <- CreateSeuratObject(counts = counts, project = "GSE190887", min.cells = 3, min.features = 200)
+
+metadata_dt <- as.data.table(metadata)
+metadata_dt <- metadata_dt[metadata_dt$V1 != "", ]
+setnames(metadata_dt, "V1", "cell")
+
+cleaned_cellnames <- gsub("[\\._-][0-9]+$", "", colnames(seurat_obj))
+
+setkey(metadata_dt, cell)
+filtered_meta <- metadata_dt[J(cleaned_cellnames)]
+
+filtered_meta <- as.data.frame(filtered_meta)
+rownames(filtered_meta) <- colnames(seurat_obj)
+seurat_obj <- AddMetaData(seurat_obj, metadata = filtered_meta)
+
+
+filtered_metadata <- metadata_dt[cell %in% colnames(seurat_obj)]
+
+seurat_obj_filtered <- subset(seurat_obj, cells = filtered_metadata$cell)
+
+setkey(filtered_metadata, cell)
+ordered_meta <- filtered_metadata[J(colnames(seurat_obj_filtered))]
+
+ordered_meta <- as.data.frame(ordered_meta)
+rownames(ordered_meta) <- colnames(seurat_obj_filtered)
+seurat_obj_filtered <- AddMetaData(seurat_obj_filtered, metadata = ordered_meta)
+
+
+
+seurat_obj_filtered@meta.data
+
+
+
+```
+
+
+# Cluster Humphreys Dataset
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+Fib.Humphreys <- subset(seurat_obj_filtered, subset = V2 == "Fib")
+
+
+Fib.Humphreys <- NormalizeData(Fib.Humphreys)
+
+Fib.Humphreys <- FindVariableFeatures(Fib.Humphreys, selection.method = "vst", nfeatures = 2000)
+
+Fib.Humphreys <- ScaleData(Fib.Humphreys)
+
+Fib.Humphreys <- RunPCA(Fib.Humphreys, features = VariableFeatures(object = Fib.Humphreys))
+
+ElbowPlot(Fib.Humphreys)
+
+Fib.Humphreys <- FindNeighbors(Fib.Humphreys, dims = 1:10)
+Fib.Humphreys <- FindClusters(Fib.Humphreys, resolution = 0.5) 
+
+Fib.Humphreys <- RunUMAP(Fib.Humphreys, dims = 1:10)
+
+DimPlot(Fib.Humphreys, reduction = "umap", label = TRUE) + NoLegend()
+
+DimPlot(Fib.Humphreys, group.by = "V3", label = TRUE)  
+
+
+
+
+```
+
+
+
+# Convert Ensembl IDs 
+
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+install.packages(c("Seurat", "biomaRt"))
+library(Seurat)
+library(biomaRt)
+library(dplyr)
+
+ensembl_ids_full <- rownames(Fib.Humphreys)
+ensembl_ids_clean <- gsub("\\.\\d+$", "", ensembl_ids_full)
+
+keep_rows <- !grepl("intron", ensembl_ids_full)
+ensembl_ids_clean <- ensembl_ids_clean[keep_rows]
+counts_clean <- GetAssayData(Fib.Humphreys, slot = "counts")[keep_rows, ]
+
+mart <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+gene_map <- getBM(
+  attributes = c("ensembl_gene_id", "external_gene_name"),
+  filters = "ensembl_gene_id",
+  values = unique(ensembl_ids_clean),
+  mart = mart
+)
+
+
+id_to_symbol <- setNames(gene_map$external_gene_name, gene_map$ensembl_gene_id)
+
+gene_symbols <- id_to_symbol[ensembl_ids_clean]
+num_missing <- sum(is.na(gene_symbols))
+
+gene_symbols[is.na(gene_symbols)] <- ensembl_ids_clean[is.na(gene_symbols)]
+gene_symbols_unique <- make.unique(gene_symbols)
+
+rownames(counts_clean) <- gene_symbols_unique
+
+gene_symbols[is.na(gene_symbols) | gene_symbols == ""] <- ensembl_ids_clean[is.na(gene_symbols) | gene_symbols == ""]
+
+gene_symbols_unique <- make.unique(gene_symbols)
+
+rownames(counts_clean) <- gene_symbols_unique
+
+counts_clean <- counts_clean[rownames(counts_clean) != "", ]
+
+
+
+Fib.Humphreys.cleaned <- CreateSeuratObject(
+  counts = counts_clean,
+  meta.data = Fib.Humphreys@meta.data,
+  project = "GSE190887_Clean"
+)
+
+
+
+Fib.Humphreys.cleaned <- NormalizeData(Fib.Humphreys.cleaned)
+Fib.Humphreys.cleaned <- FindVariableFeatures(Fib.Humphreys.cleaned, selection.method = "vst", nfeatures = 2000)
+Fib.Humphreys.cleaned <- ScaleData(Fib.Humphreys.cleaned)
+Fib.Humphreys.cleaned <- RunPCA(Fib.Humphreys.cleaned, features = VariableFeatures(Fib.Humphreys.cleaned))
+Fib.Humphreys.cleaned <- RunUMAP(Fib.Humphreys.cleaned, dims = 1:10)
+
+
+
+```
+
+
+
+# Marker Plots 
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+
+FeaturePlot(Fib.Humphreys.cleaned, "Abca8a", order = TRUE, pt.size = 1.0)
+
+FeaturePlot(Fib.Humphreys.cleaned, "Igfbp3", order = TRUE, pt.size = 0.8)
+
+FeaturePlot(Fib.Humphreys.cleaned, "Pdgfrb", order = TRUE, pt.size = 0.8)
+
+FeaturePlot(Fib.Humphreys.cleaned, "Kcnd3", order = TRUE, pt.size = 0.8)
+
+FeaturePlot(Fib.Humphreys.cleaned, "Pdgfra", order = TRUE, pt.size = 0.8)
+
+
+
+head(sort(Matrix::rowSums(counts_clean["Abca8a", , drop = FALSE]), decreasing = TRUE))
+
+head(sort(Matrix::rowSums(counts_clean["Pdgfra", , drop = FALSE]), decreasing = TRUE))
+
+
+
+
+
+
+```
+
+
+# Save RDS 
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+saveRDS(Fib.Humphreys.cleaned, file = "Fib_Humphreys_cleaned.rds")
+
+
+
+
+```
+
+
+
+
+# Session Info
+
+```{r sessioninfo, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+sessionInfo()
+
+```
+
+

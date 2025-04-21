@@ -7,6 +7,12 @@
 ## h5 initial files
 *.h5
 
+## txt initial files
+*.txt
+
+## gz initial files
+*.gz
+
 # History files
 .Rhistory
 .Rapp.history

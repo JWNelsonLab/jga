@@ -79,25 +79,54 @@ colnames(triplets) <- c("i", "j", "x")
 
 counts <- sparseMatrix(i = triplets$i, j = triplets$j, x = triplets$x)
 
-
-rownames(counts) <- genes$V1
+rownames(counts) <- genes$V4
 colnames(counts) <- cells$V1
 
-seurat_obj <- CreateSeuratObject(counts = counts, project = "GSE190887", min.cells = 3, min.features = 200)
+seurat_obj <- CreateSeuratObject(counts = counts, project = "GSE190887")
 
 metadata_dt <- as.data.table(metadata)
 metadata_dt <- metadata_dt[metadata_dt$V1 != "", ]
 setnames(metadata_dt, "V1", "cell")
 
-cleaned_cellnames <- gsub("[\\._-][0-9]+$", "", colnames(seurat_obj))
 
-setkey(metadata_dt, cell)
-filtered_meta <- metadata_dt[J(cleaned_cellnames)]
+filtered_meta <- as.data.frame(metadata_dt)
+filtered_meta2 <- filtered_meta %>% column_to_rownames(var = "cell")
 
-filtered_meta <- as.data.frame(filtered_meta)
-rownames(filtered_meta) <- colnames(seurat_obj)
-seurat_obj <- AddMetaData(seurat_obj, metadata = filtered_meta)
+seurat_obj_filtered <- subset(seurat_obj, cells = rownames(filtered_meta2))
 
+seurat_obj <- AddMetaData(seurat_obj, metadata = filtered_meta2)
+
+seurat_obj@meta.data
+
+seurat_obj <- NormalizeData(seurat_obj)
+
+Idents(seurat_obj) <- seurat_obj@meta.data$V2
+
+df <- FindMarkers(seurat_obj, ident.1 = "Fib", min.pct = 0.25, logfc.threshold = 0.5)
+
+df <- FindMarkers(seurat_obj, ident.1 = "Myofib", ident.2 = "Fib", min.pct = 0.1, logfc.threshold = 0.1)
+
+VlnPlot(seurat_obj, features = "" , group.by = "V2"
+
+table(Idents(seurat_obj), seurat_obj@meta.data$V3)
+
+
+rownames(seurat_obj)
+
+
+#rownames(filtered_meta) <- colnames(seurat_obj)
+
+# filter filtered_meta2 to only include rows that have values for rownames(seurat_obj)
+
+filtered_meta3 <- filtered_meta2[rownames(filtered_meta2) %in% colnames(seurat_obj), ]
+
+colnames(seurat_obj)
+
+seurat_obj <- AddMetaData(seurat_obj, metadata = filtered_meta3)
+
+seurat_obj
+
+seurat_obj_filtered@meta.data
 
 filtered_metadata <- metadata_dt[cell %in% colnames(seurat_obj)]
 
@@ -109,6 +138,8 @@ ordered_meta <- filtered_metadata[J(colnames(seurat_obj_filtered))]
 ordered_meta <- as.data.frame(ordered_meta)
 rownames(ordered_meta) <- colnames(seurat_obj_filtered)
 seurat_obj_filtered <- AddMetaData(seurat_obj_filtered, metadata = ordered_meta)
+
+rownames(seurat_obj)
 
 
 
@@ -282,6 +313,35 @@ saveRDS(Fib.Humphreys.cleaned, file = "Fib_Humphreys_cleaned.rds")
 
 
 Fib.Humphreys.cleaned <- readRDS(here("al_code", "Fib_Humphreys_cleaned.rds"))
+
+VlnPlot(Fib.Humphreys.cleaned, "Pdgfra", group.by = "V3")
+
+VlnPlot(Fib.Humphreys.cleaned, "Igfbp3", group.by = "V3")
+
+VlnPlot(Fib.Humphreys.cleaned, "Pdgfrb", group.by = "V3")
+
+VlnPlot(Fib.Humphreys.cleaned, "Acta2", group.by = "V3")
+
+VlnPlot(Fib.Humphreys.cleaned, "Agtr1a", group.by = "V3")
+
+Fib.Humphreys.cleaned@meta.data
+
+Idents(Fib.Humphreys.cleaned) <- Fib.Humphreys.cleaned$V3
+
+t1 <- table(Idents(Fib.Humphreys.cleaned))
+t1 <- as.data.frame(t1)
+
+
+ggplot(t1, aes(x = Var1, y = Freq)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(x = "Cluster", y = "Frequency") +
+  ggtitle("Cluster Frequencies") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Find the gene with the highest counts in Fib.Humphreys.cleaned
+
+
 
 ```
 

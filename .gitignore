@@ -1,6 +1,9 @@
 
 # JWN additions
 
+## Matrix files
+*.mtx
+
 ## RDS object files
 *.rds
 

@@ -1,0 +1,294 @@
+---
+title: "AUCell_Pdgfrb"
+author: "Jonathan Nelson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+    number_sections: yes
+    theme: bootstrap
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Packages
+
+```{r load new packages, echo=TRUE, error=FALSE, message=FALSE, warning=FALSE}
+
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!requireNamespace('BiocManager', quietly = TRUE)) {install.packages('BiocManager'); require("BiocManager")}
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("stringr")) {install.packages("stringr"); require("stringr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("sctransform")) {install.packages("sctransform"); require("sctransform")}
+if (!require("glmGamPoi")) {BiocManager::install('glmGamPoi'); require("glmGamPoi")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("EnhancedVolcano")) {BiocManager::install('EnhancedVolcano'); require("EnhancedVolcano")}
+if (!require("DESeq2")) {BiocManager::install('DESeq2'); require("DESeq2")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")}
+if (!require("RColorBrewer")) {install.packages("RColorBrewer"); require("RColorBrewer")}
+if (!require("car")) {install.packages("car"); require("car")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("readxl")) {install.packages("readxl"); require("readxl")}
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("gghighlight")) {install.packages("gghighlight"); require("gghighlight")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("data.table")) {install.packages("data.table"); require("data.table")}
+if (!require("here")) {install.packages("here"); require("here")}
+
+options(future.globals.maxSize = 74 * 1024^3) # 55 GB
+getOption("future.globals.maxSize") #59055800320
+
+#if (!requireNamespace("BiocManager", quietly=TRUE))
+#    install.packages("BiocManager")
+# To support paralell execution:
+#BiocManager::install(c("doMC", "doRNG","doSNOW"))
+
+# For the main example:
+#BiocManager::install(c("mixtools", "SummarizedExperiment"))
+
+# For the examples in the follow-up section of the tutorial:
+#BiocManager::install(c("DT", "plotly", "NMF", "d3heatmap",
+#                       "dynamicTreeCut", "R2HTML", "Rtsne", "zoo"))
+
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+# BiocManager::install("AUCell")
+
+library(AUCell)
+library(GSEABase)
+
+here()
+```
+
+# Loading Filtered Seurat Object
+These files are post-DoubletFinder.
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+SO <- readRDS(here("datasets", "GFPcombined.072824.rds"))
+
+DimPlot(SO, group.by = "class.Merge")
+
+head(SO@meta.data)
+```
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+convert_mouse_to_human <- function(gene_list) { 
+     output = c()
+     mouse_human_genes = read.csv("https://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",sep="\t")
+
+     for(gene in gene_list) {
+          class_key = (mouse_human_genes %>% filter(Symbol == gene & Common.Organism.Name == "mouse, laboratory"))[['DB.Class.Key']]
+          if( !identical(class_key, integer(0)) ) {
+               human_genes = (mouse_human_genes %>% filter(DB.Class.Key == class_key & Common.Organism.Name=="human"))[,"Symbol"]
+               for(human_gene in human_genes) {
+                    output = rbind(c(gene, human_gene), output)
+               }
+          }
+     }
+     return (output)
+}
+
+size <- 50
+
+
+
+df <- FindMarkers(SO, ident.1 = "Pericyte",  min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE, only.pos = T)
+
+df2 <- df %>% arrange(desc(avg_log2FC))
+                      
+m_pericyte <- head(rownames(df2), size)
+
+h_pericyte <- convert_mouse_to_human(m_pericyte)
+h_pericyte <- as.data.frame(h_pericyte)
+h_pericyte <- h_pericyte$V2
+
+
+
+df <- FindMarkers(SO, ident.1 = "Efferent VSMC",  min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE, only.pos = T)
+
+df2 <- df %>% arrange(desc(avg_log2FC))
+                      
+m_efferent <- head(rownames(df2), size)
+
+h_efferent <- convert_mouse_to_human(m_efferent)
+h_efferent  <- as.data.frame(h_efferent )
+h_efferent  <- h_efferent $V2
+
+
+
+df <- FindMarkers(SO, ident.1 = "Afferent VSMC",  min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE, only.pos = T)
+
+df2 <- df %>% arrange(desc(avg_log2FC))
+                      
+m_afferent <- head(rownames(df2), size)
+
+h_afferent <- convert_mouse_to_human(m_afferent)
+h_afferent  <- as.data.frame(h_afferent)
+h_afferent   <- h_afferent$V2
+
+
+
+df <- FindMarkers(SO, ident.1 = "Renin Cell",  min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE, only.pos = T)
+
+df2 <- df %>% arrange(desc(avg_log2FC))
+                      
+m_renin <- head(rownames(df2), size)
+
+h_renin <- convert_mouse_to_human(m_renin)
+h_renin <- as.data.frame(h_renin)
+h_renin  <- h_renin$V2
+
+
+
+
+df <- FindMarkers(SO, ident.1 = "EG Mesangial Cell",  min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE, only.pos = T)
+
+df2 <- df %>% arrange(desc(avg_log2FC))
+                      
+m_egm <- head(rownames(df2), size)
+
+h_egm <- convert_mouse_to_human(m_egm)
+h_egm <- as.data.frame(h_egm)
+h_egm <- h_egm$V2
+
+
+
+df <- FindMarkers(SO, ident.1 = "IG Mesangial Cell",  min.pct = 0.25, logfc.threshold = 0.25, verbose = FALSE, only.pos = T)
+
+df2 <- df %>% arrange(desc(avg_log2FC))
+                      
+m_igm <- head(rownames(df2), size)
+
+h_igm <- convert_mouse_to_human(m_igm)
+h_igm <- as.data.frame(h_igm)
+h_igm <- h_igm$V2
+
+```
+
+# Nuclei Entering the Analysis Pipeline
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+
+geneSets_1 <- GeneSet(m_pericyte, setName="m_pericyte")
+geneSets_1
+
+geneSets_2 <- GeneSet(m_efferent, setName="m_efferent")
+geneSets_2
+
+geneSets_3 <- GeneSet(m_afferent, setName="m_afferent")
+geneSets_3
+
+geneSets_4 <- GeneSet(m_renin, setName="m_renin")
+geneSets_4
+
+geneSets_5 <- GeneSet(m_egm, setName="m_egm")
+geneSets_5
+
+geneSets_6 <- GeneSet(m_igm, setName="m_igm")
+geneSets_6
+
+geneSets_7 <- GeneSet(h_pericyte, setName="h_pericyte")
+geneSets_7
+
+geneSets_8 <- GeneSet(h_efferent, setName="h_efferent")
+geneSets_8
+
+geneSets_9 <- GeneSet(h_afferent, setName="h_afferent")
+geneSets_9
+
+geneSets_10 <- GeneSet(h_renin, setName="h_renin")
+geneSets_10
+
+geneSets_11 <- GeneSet(h_egm, setName="h_egm")
+geneSets_11
+
+geneSets_12 <- GeneSet(h_igm, setName="h_igm")
+geneSets_12
+
+geneSets <- GeneSetCollection(c(geneSets_1, geneSets_2, geneSets_3, geneSets_4, geneSets_5, geneSets_6, 
+                                geneSets_7, geneSets_8, geneSets_9, geneSets_10, geneSets_11, geneSets_12))
+names(geneSets)
+
+saveRDS(geneSets, file=here("geneSets_human_mouse.rds"))
+
+```
+
+
+# Nuclei Entering the Analysis Pipeline
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+
+exprMatrix <- GetAssayData(SO, slot = "data")
+exprMatrix[1:5, 1:5]
+
+cells_AUC <- AUCell_run(exprMatrix, geneSets)
+
+cells_rankings <- AUCell_buildRankings(exprMatrix, plotStats=FALSE)
+cells_AUC <- AUCell_calcAUC(geneSets, cells_rankings)
+
+cells_rankings <- AUCell_buildRankings(exprMatrix, plotStats=TRUE)
+
+cells_rankings
+
+cells_AUC <- AUCell_calcAUC(geneSets, cells_rankings)
+
+set.seed(333)
+par(mfrow=c(3,3)) 
+cells_assignment <- AUCell_exploreThresholds(cells_AUC, plotHist=TRUE, assign=TRUE)
+
+```
+## Create Common Metadata Columns
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+cellsAssigned <- lapply(cells_assignment, function(x) x$assignment)
+assignmentTable <- reshape2::melt(cellsAssigned, value.name="cell")
+colnames(assignmentTable)[2] <- "geneSet"
+head(assignmentTable)
+
+# move cell to rownames
+
+any(duplicated(assignmentTable$cell))
+
+assignmentTable$cell[duplicated(assignmentTable$cell)]
+
+assignmentTable <- assignmentTable[!duplicated(assignmentTable$cell), ]
+
+# Remove existing row names
+rownames(assignmentTable) <- NULL
+
+# Now convert "cell" column to row names
+assignmentTable <- assignmentTable %>% column_to_rownames(var = "cell")
+
+
+SO <- AddMetaData(SO, assignmentTable)
+
+SO@meta.data
+
+DimPlot(SO)
+
+DimPlot(SO, group.by = "geneSet")
+
+```
+
+
+# Session Info
+
+```{r sessioninfo, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+sessionInfo()
+
+```
+

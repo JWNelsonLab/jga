@@ -1,0 +1,604 @@
+---
+title: "Pdgfrb-INTACT JGA Dissection Code"
+author: "Jonathan Nelson"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+    number_sections: yes
+    theme: bootstrap
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("tibble")) {install.packages("tibble"); require("tibble")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("RColorBrewer")) {install.packages("RColorBrewer"); require("RColorBrewer")} #color
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("DESeq2")) {BiocManager::install('DESeq2'); require("DESeq2")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("stringr")) {install.packages("stringr"); require("stringr")}
+if (!require("car")) {install.packages("car"); require("car")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("readxl")) {install.packages("readxl"); require("readxl")}
+if (!require("data.table")) {install.packages("data.table"); require("data.table")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("kableExtra")) {install.packages("kableExtra"); require("kableExtra")} # for color brewer
+if (!require("gplots")) {install.packages("gplots"); require("gplots")} # for color brewer
+if (!require("clusterProfiler")) {BiocManager::install('clusterProfiler'); require("clusterProfiler")}
+if (!require("enrichplot")) {BiocManager::install('enrichplot'); require("enrichplot")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")} # for data frame transformation
+library("EnhancedVolcano")
+library(UpSetR)
+library(ggtext)
+library(patchwork)
+options(stringsAsFactors = FALSE)
+
+```
+
+
+# Load Pdgfrb Dataset
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+rm(list = ls())
+
+SO <- readRDS(here("Datasets", "INTACT_JGA.rds"))
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+DimPlot(SO)
+
+SO
+
+```
+
+
+# EG vs. IG Mesangial Cells
+
+## Define Cell Populations
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+# Define i and j as the actual levels of class.JGA
+i <- "EG Mesangial Cell"   # Replace with the actual first level
+j <- "IG Mesangial Cell"  # Replace with the actual second level
+
+# Define the color mapping dynamically
+color_mapping <- setNames(c("blue", "yellow"), c(i, j))
+
+# Pass the mapping to DimPlot
+DimPlot(SO, group.by = "class.JGA", cols = color_mapping) +
+  ylab("UMAP 2") +
+  xlab("UMAP 1") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.line = element_line(size = 1, colour = "black"),
+    axis.text = element_blank(),          # Remove axis text
+    axis.ticks = element_blank(),         # Optional: Remove axis ticks
+    text = element_text(size = 20)
+  ) + ggtitle("")  +
+  theme(legend.position = "none")
+
+```
+
+
+## Volcano Plot
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+df <- FindMarkers(SO, ident.1 = i, ident.2 = j, min.pct = 0.1, logfc.threshold = 0.25)
+df <- df[order(df$avg_log2FC, decreasing = TRUE), ]
+
+df2 <- df %>% filter(p_val_adj < 0.05)
+gene_list <- df2$avg_log2FC
+
+top5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = TRUE)[1:10]]
+bottom5 <- rownames(df2)[order(df2$avg_log2FC, decreasing = FALSE)[1:10]]
+
+# Combine them into a single vector
+selected_genes <- c(top5, bottom5)
+
+EnhancedVolcano(df2,
+                lab = rownames(df2),
+                selectLab = selected_genes,
+                title = (""),
+                subtitle = NULL,
+                caption = NULL,
+                x = 'avg_log2FC', 
+                legendLabels = NULL, 
+                FCcutoff = 0.25, 
+                y = 'p_val_adj', 
+                labSize = 4, 
+                legendIconSize = 4, 
+                drawConnectors = T,
+                max.overlap = 5,
+                xlim = c(-3.5, 3.5),
+                widthConnectors = 0.5) + 
+  theme_classic(base_size = 16) +  # Increases overall font size
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+        axis.text = element_text(size = 14),  # Axis tick labels
+        axis.title = element_text(size = 16, face = "bold"),  # Axis labels
+        axis.line = element_line(size = 1.2),  # Increases axis border thickness
+        legend.position = "none")
+```
+
+
+
+## j Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC < 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+pos_go_ig <- pos_go
+
+
+```
+
+## i Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme_classic() + 
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "left",
+        axis.text.y = element_text(hjust = 0, size = 10)) +
+    scale_y_discrete(position = "right", 
+                     labels = function(x) str_wrap(x, width = 25))  # Wrap y-axis labels to 2 lines
+
+df_go <- pos_go@result
+
+pos_go_eg <- pos_go
+
+
+```
+
+
+
+
+# Combine Plots 
+
+
+## Create Separate Data Frames 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(forcats)
+
+
+# EG 
+top_eg <- pos_go_eg@result %>%
+  arrange(p.adjust) %>%
+  slice_head(n = 10) %>%
+  mutate(
+    Group = "EG",
+    GeneRatioNum = sapply(GeneRatio, function(x) {
+      parts <- str_split(x, "/")[[1]]
+      as.numeric(parts[1]) / as.numeric(parts[2])
+    }),
+    Label = paste0(Description, " (EG)")
+  )
+
+# IG 
+
+top_ig <- pos_go_ig@result %>%
+  arrange(p.adjust) %>%
+  slice_head(n = 10) %>%
+  mutate(
+    Group = "IG",
+    GeneRatioNum = sapply(GeneRatio, function(x) {
+      parts <- str_split(x, "/")[[1]]
+      as.numeric(parts[1]) / as.numeric(parts[2])
+    }),
+    Label = paste0(Description, " (IG)")
+  )
+
+
+library(dplyr)
+library(stringr)
+
+```
+
+
+
+## Combine Dataframes 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+combined_df <- bind_rows(top_eg, top_ig) %>%
+  mutate(Group = factor(Group, levels = c("EG", "IG"))) %>%  
+  arrange(Group, GeneRatioNum) %>%
+  mutate(Label = factor(Label, levels = Label))  
+
+
+
+combined_df <- combined_df %>%
+    mutate(
+      PathwayGenes = as.numeric(str_extract(BgRatio, "^[0-9]+")),  # numerator of BgRatio
+      finalratio = Count / PathwayGenes,
+      neglogp = -log10(p.adjust)
+    )
+
+
+combined_df$GeneRatioDecimal <- sapply(strsplit(as.character(combined_df$GeneRatio), "/"),
+                                        function(x) as.numeric(x[1]) / as.numeric(x[2]))
+
+
+library(dplyr)
+
+combined_df <- combined_df %>%
+  mutate(GeneRatioDecimal = sapply(strsplit(as.character(GeneRatio), "/"),
+                                   function(x) as.numeric(x[1]) / as.numeric(x[2]))) %>%
+  arrange(Group, desc(GeneRatioDecimal)) %>%
+  mutate(Label = factor(Label, levels = unique(Label)))
+
+
+
+
+```
+
+
+## Plot 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.length - 14, fig.width = 14}
+
+
+ggplot(combined_df, aes(x = GeneRatioDecimal,
+                        y = Label,
+                        size = neglogp,
+                        fill = Group)) +
+  geom_point(shape = 21, color = "black") +
+  scale_fill_manual(values = c("EG" = "firebrick", "IG" = "dodgerblue")) +
+  scale_size_continuous(
+    name = expression(-log[10](adjusted~p~value)),
+    range = c(3, 10)
+  ) +
+  scale_y_discrete(position = "right") +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Fraction of Pathway Genes",
+    y = "Pathway",
+    fill = "Cell Type"
+  ) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 12),
+    legend.position = "right"
+  )
+
+
+
+
+```
+
+
+# Create AverageExpression Plot 
+
+
+## Gather Gene Lists 
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+library(dplyr)
+library(tidyr)
+
+top_pathways <- top_eg %>%
+  slice_head(n = 10) %>%
+  mutate(pathway_index = row_number())  
+
+pathway_genes <- top_pathways %>%
+  separate_rows(geneID, sep = "/") %>%
+  group_by(pathway_index) %>%
+  summarise(genes_in_pathway = list(geneID), .groups = "drop") %>%
+  mutate(chosen_gene = NA_character_)
+
+# Storing selected genes 
+picked_genes <- character(0)
+
+
+
+for (i in seq_len(nrow(pathway_genes))) {
+  possible_genes <- pathway_genes$genes_in_pathway[[i]]
+  new_gene <- possible_genes[!possible_genes %in% picked_genes][1]
+  
+  if (!is.na(new_gene)) {
+    picked_genes <- c(picked_genes, new_gene)
+    pathway_genes$chosen_gene[i] <- new_gene
+  }
+}
+
+
+top_eg_genes <- na.omit(pathway_genes$chosen_gene)
+top_eg_genes <- as.character(top_eg_genes)
+
+
+top_eg_genes
+
+
+
+
+
+```
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+
+top_pathways <- top_ig %>%
+  slice_head(n = 10) %>%
+  mutate(pathway_index = row_number())  
+
+pathway_genes <- top_pathways %>%
+  separate_rows(geneID, sep = "/") %>%
+  group_by(pathway_index) %>%
+  summarise(genes_in_pathway = list(geneID), .groups = "drop") %>%
+  mutate(chosen_gene = NA_character_)
+
+# Storing selected genes 
+picked_genes <- character(0)
+
+
+
+for (i in seq_len(nrow(pathway_genes))) {
+  possible_genes <- pathway_genes$genes_in_pathway[[i]]
+  new_gene <- possible_genes[!possible_genes %in% picked_genes][1]
+  
+  if (!is.na(new_gene)) {
+    picked_genes <- c(picked_genes, new_gene)
+    pathway_genes$chosen_gene[i] <- new_gene
+  }
+}
+
+
+top_ig_genes <- na.omit(pathway_genes$chosen_gene)
+top_ig_genes <- as.character(top_ig_genes)
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+## Create Average Expression Matrix 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+Idents(SO) <- SO@meta.data$class.JGA
+
+top_genes <- unique(c(top_ig_genes, top_eg_genes))
+
+top_genes <- top_genes[!top_genes %in% c("Slc8a1", "Prkca")]
+
+avg_exp <- AverageExpression(
+  SO,
+  features = top_genes,
+  group.by = "class.JGA",
+  slot = "data",     
+  assays = "RNA"
+)$RNA
+
+avg_exp <- avg_exp[, c("EG Mesangial Cell", "IG Mesangial Cell"), drop = FALSE]
+
+
+avg_exp
+
+
+
+```
+
+
+
+## HeatMap
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.length = 20, fig.height = 20}
+
+
+library(pheatmap)
+
+
+
+pheatmap(
+  avg_exp,
+  scale = "column",  
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+  fontsize_row = 12,
+  fontsize_col = 10,
+  angle_col = 45,
+  main = "Average Expression: IG vs EG (Relative Enrichment)",
+  border_color = NA,
+  cellwidth = 18,     
+  cellheight = 25, 
+  legend_pos = "right"
+)
+
+
+
+
+
+```
+
+
+
+
+# HeatMap 2 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.length = 20, fig.height = 20}
+
+
+
+
+
+top_genes2 <- top_genes[!top_genes %in% c("Slc8a1", "Prkca", "Col4a4", "Chst11", "Wt1", "Casp4", "Sfrp2", "Angpt2")]
+
+avg_exp2 <- AverageExpression(
+  SO,
+  features = top_genes2,
+  group.by = "class.JGA",
+  slot = "data",     
+  assays = "RNA"
+)$RNA
+
+avg_exp2 <- avg_exp2[, c("EG Mesangial Cell", "IG Mesangial Cell"), drop = FALSE]
+
+
+avg_exp2
+
+
+
+
+
+
+```
+
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.length = 20, fig.height = 20}
+
+
+
+
+pheatmap(
+  avg_exp2,
+  scale = "column",  
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+  fontsize_row = 12,
+  fontsize_col = 10,
+  angle_col = 45,
+  main = "Average Expression: IG vs EG (Relative Enrichment)",
+  border_color = NA,
+  cellwidth = 18,     
+  cellheight = 25    
+)
+
+
+
+
+
+
+
+```
+
+
+
+# Session Info
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+sessionInfo()
+
+```
+
+
+  

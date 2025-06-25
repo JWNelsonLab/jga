@@ -1,0 +1,811 @@
+---
+title: "Fibroblast A Pathways Figure"
+author: "Arjun Lakshmanan"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+    number_sections: yes
+    theme: bootstrap
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("tibble")) {install.packages("tibble"); require("tibble")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("RColorBrewer")) {install.packages("RColorBrewer"); require("RColorBrewer")} #color
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("DESeq2")) {BiocManager::install('DESeq2'); require("DESeq2")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("stringr")) {install.packages("stringr"); require("stringr")}
+if (!require("car")) {install.packages("car"); require("car")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("readxl")) {install.packages("readxl"); require("readxl")}
+if (!require("data.table")) {install.packages("data.table"); require("data.table")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("kableExtra")) {install.packages("kableExtra"); require("kableExtra")} # for color brewer
+if (!require("gplots")) {install.packages("gplots"); require("gplots")} # for color brewer
+if (!require("clusterProfiler")) {BiocManager::install('clusterProfiler'); require("clusterProfiler")}
+if (!require("enrichplot")) {BiocManager::install('enrichplot'); require("enrichplot")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")} # for data frame transformation
+library("EnhancedVolcano")
+library(UpSetR)
+library(ggtext)
+library(patchwork)
+options(stringsAsFactors = FALSE)
+
+```
+
+
+# Load Pdgfrb Dataset
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+rm(list = ls())
+
+SO_original <- readRDS(here("Datasets", "GFP.clean.052324.rds"))
+
+
+Idents(SO_original) <- SO_original@meta.data$class
+
+
+DimPlot(SO_original, group.by = "class")
+
+DefaultAssay(SO_original) <- "RNA"
+
+
+
+```
+
+
+
+# Filter 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+SO <- subset(SO_original, class.genetics == "WT")
+
+DimPlot(SO, group.by = "class.genetics")
+
+
+SO <- subset(SO, Special == c("Fibroblast A", "Fibroblast B", "Fibroblast C", "Fibroblast D"))
+
+# 1. Normalize data
+SO <- NormalizeData(SO)
+
+# 2. Identify variable features
+SO <- FindVariableFeatures(SO)
+
+# 3. Scale the data
+SO <- ScaleData(SO)
+
+# 4. Run PCA
+SO <- RunPCA(SO)
+
+# Optional: Visualize PCA
+ElbowPlot(SO)
+
+# 5. Find neighbors
+SO <- FindNeighbors(SO, dims = 1:10)  # Adjust dims as needed based on ElbowPlot
+
+# 6. Find clusters
+SO <- FindClusters(SO, resolution = 0.5)  # You can tweak resolution
+
+# 7. Run UMAP or tSNE
+SO <- RunUMAP(SO, dims = 1:10)
+
+# 8. Plot the clusters
+DimPlot(SO, group.by = "Special", label = TRUE)
+
+
+
+
+
+
+
+
+```
+
+# Define Cell Populations 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+i <- "Fibroblast A"   
+j <- "Fibroblast B"  
+k <- "Fibroblast C"
+l <- "Fibroblast D"
+
+
+
+```
+
+
+## FindMarkers
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+Idents(SO) <- "Special"
+
+
+df1 <- FindMarkers(SO, ident.1 = i, min.pct = 0.25, logfc.threshold = 0.25)
+df1 <- df1[order(df1$avg_log2FC, decreasing = TRUE), ]
+df1 <- df1 %>% filter(p_val_adj < 0.05)
+
+
+df2 <- FindMarkers(SO, ident.1 = j, min.pct = 0.25, logfc.threshold = 0.25)
+df2 <- df2[order(df2$avg_log2FC, decreasing = TRUE), ]
+df2 <- df2 %>% filter(p_val_adj < 0.05)
+gene_list_2 <- df2$avg_log2FC
+
+df3 <- FindMarkers(SO, ident.1 = k, min.pct = 0.25, logfc.threshold = 0.25)
+df3 <- df3[order(df3$avg_log2FC, decreasing = TRUE), ]
+df3 <- df3 %>% filter(p_val_adj < 0.05)
+gene_list_3 <- df3$avg_log2FC
+
+
+df4 <- FindMarkers(SO, ident.1 = l, min.pct = 0.25, logfc.threshold = 0.25)
+df4 <- df4[order(df4$avg_log2FC, decreasing = TRUE), ]
+df4 <- df4 %>% filter(p_val_adj < 0.05)
+gene_list_4<- df4$avg_log2FC
+
+
+
+FeaturePlot(SO, "Atf7ip2", order = TRUE)
+
+DimPlot(SO, group.by = "Special")
+
+```
+
+
+
+## FibA Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df1
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+
+pos_go_fiba <- pos_go
+
+?FindMarkers
+
+```
+
+
+
+
+
+## FibB Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df2
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+
+pos_go_fibb <- pos_go
+
+
+
+```
+
+
+
+## FibC Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df3
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+
+pos_go_fibc <- pos_go
+
+
+
+```
+
+
+
+
+
+## FibD Pathways
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+DEG_list <- df4
+
+markers <- DEG_list %>% rownames_to_column(var="SYMBOL")
+
+head(markers, n = 50)
+
+ENTREZ_list <- bitr(geneID = rownames(DEG_list),   #input gene id
+                    fromType = "SYMBOL",           #input id type
+                    toType = "ENTREZID",           #output id type
+                    OrgDb = "org.Mm.eg.db"         #annotation Db
+                    )
+
+markers <-  ENTREZ_list %>% inner_join(markers, by = "SYMBOL")
+
+# Removing genes that are not statistically significant. 
+markers <-  markers %>% dplyr::filter(p_val_adj < 0.05)
+#head(markers, n = 50)
+
+pos.markers <-  markers %>% dplyr::filter(avg_log2FC > 0) %>%  arrange(desc(abs(avg_log2FC)))
+#head(pos.markers, n = 50)
+
+pos.ranks <- pos.markers$ENTREZID[abs(pos.markers$avg_log2FC) > 0]
+#head(pos.ranks)
+
+pos_go <- enrichGO(gene = pos.ranks,           #a vector of entrez gene id
+                   OrgDb = "org.Mm.eg.db",    
+                   ont = "BP",
+                   readable = TRUE)              #whether mapping gene ID to gene Name
+
+pos_go
+
+# rotate this plot around the y axis
+
+dotplot(pos_go) +
+    ggtitle("") +
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    theme_classic() + 
+    scale_x_reverse()  # Reverses the x-axis
+
+df_go <- pos_go@result
+
+
+pos_go_fibd <- pos_go
+
+
+
+```
+
+
+
+
+# Combine Plots 
+
+
+## Create Separate Data Frames 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(forcats)
+
+
+# EG 
+top_fiba <- pos_go_fiba@result %>%
+  arrange(p.adjust) %>%
+  slice_head(n = 5) %>%
+  mutate(
+    Group = "Fib A",
+    GeneRatioNum = sapply(GeneRatio, function(x) {
+      parts <- str_split(x, "/")[[1]]
+      as.numeric(parts[1]) / as.numeric(parts[2])
+    }),
+    Label = paste0(Description, " (Fib A)")
+  )
+
+# IG 
+
+top_fibb <- pos_go_fibb@result %>%
+  arrange(p.adjust) %>%
+  slice_head(n = 5) %>%
+  mutate(
+    Group = "Fib B",
+    GeneRatioNum = sapply(GeneRatio, function(x) {
+      parts <- str_split(x, "/")[[1]]
+      as.numeric(parts[1]) / as.numeric(parts[2])
+    }),
+    Label = paste0(Description, " (Fib B)")
+  )
+
+
+top_fibc <- pos_go_fibc@result %>%
+  arrange(p.adjust) %>%
+  slice_head(n = 5) %>%
+  mutate(
+    Group = "Fib C",
+    GeneRatioNum = sapply(GeneRatio, function(x) {
+      parts <- str_split(x, "/")[[1]]
+      as.numeric(parts[1]) / as.numeric(parts[2])
+    }),
+    Label = paste0(Description, " (Fib C)")
+  )
+
+
+
+top_fibd <- pos_go_fibd@result %>%
+  arrange(p.adjust) %>%
+  slice_head(n = 5) %>%
+  mutate(
+    Group = "Fib D",
+    GeneRatioNum = sapply(GeneRatio, function(x) {
+      parts <- str_split(x, "/")[[1]]
+      as.numeric(parts[1]) / as.numeric(parts[2])
+    }),
+    Label = paste0(Description, " (Fib D)")
+  )
+
+
+
+library(dplyr)
+library(stringr)
+
+
+```
+
+
+
+## Combine Dataframes 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+combined_df <- bind_rows(top_fiba, top_fibb, top_fibc, top_fibd) %>%
+  mutate(Group = factor(Group, levels = c("Fib A", "Fib B", "Fib C", "Fib D"))) %>%
+  arrange(Group, GeneRatioNum) %>%
+  mutate(Label = factor(Label, levels = unique(Label)))
+
+
+
+
+combined_df <- combined_df %>%
+    mutate(
+      PathwayGenes = as.numeric(str_extract(BgRatio, "^[0-9]+")),  # numerator of BgRatio
+      finalratio = Count / PathwayGenes,
+      neglogp = -log10(p.adjust)
+    )
+
+
+combined_df$GeneRatioDecimal <- sapply(strsplit(as.character(combined_df$GeneRatio), "/"),
+                                        function(x) as.numeric(x[1]) / as.numeric(x[2]))
+
+
+library(dplyr)
+
+combined_df <- combined_df %>%
+  mutate(GeneRatioDecimal = sapply(strsplit(as.character(GeneRatio), "/"),
+                                   function(x) as.numeric(x[1]) / as.numeric(x[2]))) %>%
+  arrange(Group, desc(GeneRatioDecimal)) %>%
+  mutate(Label = factor(Label, levels = unique(Label)))
+
+
+
+
+```
+
+
+## Plot 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.length - 30, fig.width = 30}
+
+
+ggplot(combined_df, aes(x = GeneRatioDecimal,
+                        y = Label,
+                        size = neglogp,
+                        fill = Group)) +
+  geom_point(shape = 21, color = "black") +
+  scale_fill_manual(values = c(c("Fib A" = "#1B9E77",  
+  "Fib B" = "#D95F02",  
+  "Fib C" = "#7570B3",  
+  "Fib D" = "#E7298A")))  +
+  scale_size_continuous(
+    name = expression(-log[10](adjusted~p~value)),
+    range = c(3, 10)
+  ) +
+  scale_y_discrete(position = "right") +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Fraction of Pathway Genes",
+    y = "Pathway",
+    fill = "Cell Type"
+  ) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 12),
+    legend.position = "right"
+  )
+
+
+head(combined_df)
+
+```
+
+
+# Create AverageExpression Plot 
+
+
+## Gather Gene Lists 
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+library(dplyr)
+library(tidyr)
+
+top_pathways <- top_fiba %>%
+  slice_head(n = 10) %>%
+  mutate(pathway_index = row_number())  
+
+pathway_genes <- top_pathways %>%
+  separate_rows(geneID, sep = "/") %>%
+  group_by(pathway_index) %>%
+  summarise(genes_in_pathway = list(geneID), .groups = "drop") %>%
+  mutate(chosen_gene = NA_character_)
+
+# Storing selected genes 
+picked_genes <- character(0)
+
+
+
+for (i in seq_len(nrow(pathway_genes))) {
+  possible_genes <- pathway_genes$genes_in_pathway[[i]]
+  new_gene <- possible_genes[!possible_genes %in% picked_genes][1]
+  
+  if (!is.na(new_gene)) {
+    picked_genes <- c(picked_genes, new_gene)
+    pathway_genes$chosen_gene[i] <- new_gene
+  }
+}
+
+
+top_fiba_genes <- na.omit(pathway_genes$chosen_gene)
+top_fiba_genes <- as.character(top_fiba_genes)
+
+
+top_fiba_genes
+
+```
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+library(dplyr)
+library(tidyr)
+
+top_pathways <- top_fibb %>%
+  slice_head(n = 10) %>%
+  mutate(pathway_index = row_number())  
+
+pathway_genes <- top_pathways %>%
+  separate_rows(geneID, sep = "/") %>%
+  group_by(pathway_index) %>%
+  summarise(genes_in_pathway = list(geneID), .groups = "drop") %>%
+  mutate(chosen_gene = NA_character_)
+
+# Storing selected genes 
+picked_genes <- character(0)
+
+
+
+for (i in seq_len(nrow(pathway_genes))) {
+  possible_genes <- pathway_genes$genes_in_pathway[[i]]
+  new_gene <- possible_genes[!possible_genes %in% picked_genes][1]
+  
+  if (!is.na(new_gene)) {
+    picked_genes <- c(picked_genes, new_gene)
+    pathway_genes$chosen_gene[i] <- new_gene
+  }
+}
+
+
+top_fibb_genes <- na.omit(pathway_genes$chosen_gene)
+top_fibb_genes <- as.character(top_fibb_genes)
+
+
+top_fibb_genes
+
+
+
+
+```
+
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+library(dplyr)
+library(tidyr)
+
+top_pathways <- top_fibc %>%
+  slice_head(n = 10) %>%
+  mutate(pathway_index = row_number())  
+
+pathway_genes <- top_pathways %>%
+  separate_rows(geneID, sep = "/") %>%
+  group_by(pathway_index) %>%
+  summarise(genes_in_pathway = list(geneID), .groups = "drop") %>%
+  mutate(chosen_gene = NA_character_)
+
+# Storing selected genes 
+picked_genes <- character(0)
+
+
+
+for (i in seq_len(nrow(pathway_genes))) {
+  possible_genes <- pathway_genes$genes_in_pathway[[i]]
+  new_gene <- possible_genes[!possible_genes %in% picked_genes][1]
+  
+  if (!is.na(new_gene)) {
+    picked_genes <- c(picked_genes, new_gene)
+    pathway_genes$chosen_gene[i] <- new_gene
+  }
+}
+
+
+top_fibc_genes <- na.omit(pathway_genes$chosen_gene)
+top_fibc_genes <- as.character(top_fibc_genes)
+
+
+top_fibc_genes
+
+
+
+
+```
+
+
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+library(dplyr)
+library(tidyr)
+
+top_pathways <- top_fibd %>%
+  slice_head(n = 10) %>%
+  mutate(pathway_index = row_number())  
+
+pathway_genes <- top_pathways %>%
+  separate_rows(geneID, sep = "/") %>%
+  group_by(pathway_index) %>%
+  summarise(genes_in_pathway = list(geneID), .groups = "drop") %>%
+  mutate(chosen_gene = NA_character_)
+
+# Storing selected genes 
+picked_genes <- character(0)
+
+
+
+for (i in seq_len(nrow(pathway_genes))) {
+  possible_genes <- pathway_genes$genes_in_pathway[[i]]
+  new_gene <- possible_genes[!possible_genes %in% picked_genes][1]
+  
+  if (!is.na(new_gene)) {
+    picked_genes <- c(picked_genes, new_gene)
+    pathway_genes$chosen_gene[i] <- new_gene
+  }
+}
+
+
+top_fibd_genes <- na.omit(pathway_genes$chosen_gene)
+top_fibd_genes <- as.character(top_fibd_genes)
+
+
+top_fibd_genes
+
+
+```
+
+
+
+
+
+## Create Average Expression Matrix 
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+
+Idents(SO) <- SO@meta.data$class
+
+top_genes <- unique(c(top_fiba_genes, top_fibb_genes, top_fibc_genes, top_fibd_genes))
+
+
+
+avg_exp <- AverageExpression(
+  SO,
+  features = top_genes,
+  group.by = "class",
+  slot = "data",     
+  assays = "RNA"
+)$RNA
+
+avg_exp <- avg_exp[, c("Fibroblast A", "Fibroblast B", "Fibroblast C", "Fibroblast D"), drop = FALSE]
+
+
+avg_exp
+
+
+
+
+```
+
+
+
+## HeatMap
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.length = 20, fig.height = 20}
+
+
+library(pheatmap)
+
+
+
+pheatmap(
+  avg_exp,
+  scale = "row",  
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+  fontsize_row = 12,
+  fontsize_col = 10,
+  angle_col = 45,
+  main = "Average Expression: IG vs EG (Relative Enrichment)",
+  border_color = NA,
+  cellwidth = 18,     
+  cellheight = 25, 
+  legend_pos = "right"
+)
+
+
+
+
+
+```
+
+
+
+
+
+
+
+# Session Info
+
+```{r, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE}
+
+sessionInfo()
+
+```
+
+
+  

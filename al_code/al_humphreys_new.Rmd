@@ -1,0 +1,197 @@
+---
+title: "Analyzing Humphreys Fibrosis Dataset"
+author: "Arjun Lakshmanan"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    number_sections: yes
+    theme: journal
+    df_print: paged
+    code_folding: hide
+    highlight: pygments
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Install Packages 
+
+```{r load new packages, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+if (!require("Seurat")) {install.packages("Seurat"); require("Seurat")}
+if (!require("patchwork")) {install.packages("patchwork"); require("patchwork")}
+if (!require("knitr")) {install.packages("knitr"); require("knitr")}
+if (!require("ggplot2")) {install.packages("ggplot2"); require("ggplot2")}
+if (!require("BiocManager")) {install.packages("BiocManager"); require("BiocManager")}
+if (!require("ggpmisc")) {install.packages("ggpmisc"); require("ggpmisc")}
+if (!require("here")) {install.packages("here"); require("here")}
+if (!require("devtools")) {install.packages("devtools"); require("devtools")}
+if (!require("tidyverse")) {install.packages("tidyverse"); require("tidyverse")}
+if (!require("openxlsx")) {install.packages("openxlsx"); require("openxlsx")}
+if (!require("sjmisc")) {install.packages("sjmisc"); require("sjmisc")}
+if (!require("gridExtra")) {install.packages("gridExtra"); require("gridExtra")}
+if (!require("gplots")) {install.packages("gplots"); require("gplots")}
+if (!require("ggvenn")) {install.packages("ggvenn"); require("ggvenn")}
+if (!require("ggrepel")) {install.packages("ggrepel"); require("ggrepel")}
+if (!require("biomaRt")) {install.packages("biomaRt"); require("biomaRt")}
+if (!require("dplyr")) {install.packages("dplyr"); require("dplyr")}
+
+
+
+set.seed(12345)
+#here::set_here()
+here()
+```
+
+
+
+# Objective 
+
+
+
+
+# Load Humphreys Dataset 
+
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+library(Matrix)
+library(data.table)
+library(R.utils)
+
+
+triplets <- fread("GSM5733424_count.mtx", header = FALSE)
+genes <- fread("GSE190887_gene_name_annotate.txt", header = FALSE)
+cells <- fread("GSE190887_cell_annotate.txt", header = FALSE)
+metadata <- fread("GSE190887_meta_cell_type_sample.csv")
+
+
+colnames(triplets) <- c("i", "j", "x")
+
+counts <- sparseMatrix(i = triplets$i, j = triplets$j, x = triplets$x)
+
+rownames(counts) <- genes$V4
+colnames(counts) <- cells$V1
+
+rownames(counts) <- make.unique(rownames(counts))
+
+
+seurat_obj <- CreateSeuratObject(counts = counts, project = "GSE190887")
+
+metadata_dt <- as.data.table(metadata)
+metadata_dt <- metadata_dt[metadata_dt$V1 != "", ]
+setnames(metadata_dt, "V1", "cell")
+
+
+filtered_meta <- as.data.frame(metadata_dt)
+filtered_meta2 <- filtered_meta %>% column_to_rownames(var = "cell")
+seurat_obj_filtered <- subset(seurat_obj, cells = rownames(filtered_meta2))
+
+seurat_obj <- AddMetaData(seurat_obj, metadata = filtered_meta2)
+
+seurat_obj@meta.data
+
+seurat_obj <- NormalizeData(seurat_obj)
+
+Idents(seurat_obj) <- seurat_obj@meta.data$V2
+
+
+df <- FindMarkers(seurat_obj, ident.1 = "Myofib", ident.2 = "Fib", min.pct = 0.1, logfc.threshold = 0.1)
+
+df <- df[order(df$avg_log2FC, decreasing = TRUE), ]
+
+
+df
+
+
+```
+
+
+
+
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+Idents(seurat_obj) <- "V2"
+
+
+
+Fib.Humphreys <- subset(seurat_obj, idents = c("Fib", "Myofib"))
+
+
+Fib.Humphreys <- NormalizeData(Fib.Humphreys)
+
+Fib.Humphreys <- FindVariableFeatures(Fib.Humphreys, selection.method = "vst", nfeatures = 2000)
+
+SCTransform(pbmc) %>%
+    RunPCA() %>%
+    FindNeighbors(dims = 1:30) %>%
+    FindClusters() %>%
+    RunUMAP(dims = 1:30)
+
+
+
+
+# Fib.Humphreys <- ScaleData(Fib.Humphreys)
+
+# Fib.Humphreys <- RunPCA(Fib.Humphreys, features = VariableFeatures(object = Fib.Humphreys))
+
+Fib.Humphreys <- FindNeighbors(Fib.Humphreys, dims = 1:10)
+Fib.Humphreys <- FindClusters(Fib.Humphreys, resolution = 0.5) 
+
+Fib.Humphreys <- RunUMAP(Fib.Humphreys, dims = 1:10)
+
+DimPlot(Fib.Humphreys, reduction = "umap", label = TRUE) + NoLegend()
+
+DimPlot(Fib.Humphreys, group.by = "V3", label = TRUE)  
+DimPlot(Fib.Humphreys, group.by = "V2", label = TRUE)  
+
+
+
+FeaturePlot(Fib.Humphreys, "Col1a1")
+FeaturePlot(Fib.Humphreys, "Acta2")
+FeaturePlot(Fib.Humphreys, "Col3a1")
+FeaturePlot(Fib.Humphreys, "Tagln")
+
+
+Fib.Humphreys@meta.data
+
+
+
+
+```
+
+
+```{r echo=TRUE, warning=FALSE, error=FALSE, results = TRUE, message=FALSE, fig.align = 'center'}
+
+df2 <- FindMarkers(Fib.Humphreys, )
+
+
+
+FeaturePlot(Fib.Humphreys, "Col3a1")
+
+
+```
+
+
+# Session Info
+
+```{r sessioninfo, echo=TRUE, warning=FALSE, error=FALSE, message=FALSE, fig.align = 'center'}
+
+sessionInfo()
+
+```
+
+
